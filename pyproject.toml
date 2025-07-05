@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "OctoStreamControl"
+version = "0.1.0"
+description = "A plugin for displaying and automatically recording from a webrtc stream."
+authors = [
+    {name = "Carl Svensson", email = "csvenss2@gmail.com"}
+]
+readme = {file = "README.md", content-type = "markdown"}
+dynamic = [
+    "license"
+]
+
+requires-python = ">=3.7, <4"
+
+# any additional requirements (besides OctoPrint) should be listed here
+dependencies = []
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = [
+    "octostreamcontrol",
+    "octostreamcontrol.*"
+]
+
+[project.entry-points."octoprint.plugin"]
+octostreamcontrol = "octostreamcontrol"
+
+[project.urls]
+Homepage = "https://github.com/cecomp64/OctoStreamControl"
+
+[project.optional-dependencies]
+develop = [
+    "go-task-bin"
+]

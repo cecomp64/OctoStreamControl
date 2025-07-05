@@ -1,0 +1,4 @@
+include README.md
+recursive-include octostreamcontrol/templates *
+recursive-include octostreamcontrol/translations *
+recursive-include octostreamcontrol/static *
