@@ -4,26 +4,26 @@
  * Author: Carl Svensson
  * License: AGPL-3.0-or-later
  */
+
 $(function() {
-    function OctostreamcontrolViewModel(parameters) {
+    function OctoStreamControlViewModel(parameters) {
         var self = this;
 
-        // assign the injected parameters, e.g.:
-        // self.loginStateViewModel = parameters[0];
-        // self.settingsViewModel = parameters[1];
+        self.settings = parameters[0];
+        self.streamSrc = ko.computed(() => self.settings.settings.stream_url());
 
-        // TODO: Implement your plugin's view model here.
+        self.startRecording = function() {
+            OctoPrint.simpleApiCommand("octostreamcontrol", { action: "start" });
+        };
+
+        self.stopRecording = function() {
+            OctoPrint.simpleApiCommand("octostreamcontrol", { action: "stop" });
+        };
     }
 
-    /* view model class, parameters for constructor, container to bind to
-     * Please see http://docs.octoprint.org/en/master/plugins/viewmodels.html#registering-custom-viewmodels for more details
-     * and a full list of the available options.
-     */
     OCTOPRINT_VIEWMODELS.push({
-        construct: OctostreamcontrolViewModel,
-        // ViewModels your plugin depends on, e.g. loginStateViewModel, settingsViewModel, ...
-        dependencies: [ /* "loginStateViewModel", "settingsViewModel" */ ],
-        // Elements to bind to, e.g. #settings_plugin_octostreamcontrol, #tab_plugin_octostreamcontrol, ...
-        elements: [ /* ... */ ]
+        construct: OctoStreamControlViewModel,
+        dependencies: ["settingsViewModel"],
+        elements: ["#tab_plugin_octostreamcontrol"]
     });
 });

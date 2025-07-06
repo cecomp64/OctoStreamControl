@@ -9,70 +9,55 @@ from __future__ import absolute_import
 #
 # Take a look at the documentation on what other plugin mixins are available.
 
-import octoprint.plugin
+from octoprint.plugin import (
+    StartupPlugin, SettingsPlugin, EventHandlerPlugin, TemplatePlugin
+)
+import subprocess
 
-class OctostreamcontrolPlugin(octoprint.plugin.SettingsPlugin,
-    octoprint.plugin.AssetPlugin,
-    octoprint.plugin.TemplatePlugin
-):
+class OctoStreamControlPlugin(StartupPlugin, SettingsPlugin, EventHandlerPlugin, TemplatePlugin):
 
-    ##~~ SettingsPlugin mixin
+    def on_after_startup(self):
+        self._logger.info("OctoStreamControl loaded and ready.")
+
+    def on_event(self, event, payload):
+        if event == "PrintStarted":
+            self.start_recording()
+        elif event in ("PrintCancelled", "PrintFailed", "PrintDone"):
+            self.stop_recording()
+
+    def start_recording(self):
+        cmd = [
+            "/usr/bin/ffmpeg",
+            "-y",
+            "-i", self._settings.get(["stream_url"]),
+            "-c:v", "copy",
+            f"/home/pi/videos/print_{self._printer.get_current_job()['file']['name']}.mp4"
+        ]
+        self._recording_process = subprocess.Popen(cmd)
+        self._logger.info("Recording started.")
+
+    def stop_recording(self):
+        if hasattr(self, "_recording_process") and self._recording_process.poll() is None:
+            self._recording_process.terminate()
+            self._logger.info("Recording stopped.")
 
     def get_settings_defaults(self):
         return {
-            # put your plugin's default settings here
+            "stream_url": "rtsp://localhost:8554/mystream",
+            "resolution": "640x360"
         }
 
-    ##~~ AssetPlugin mixin
+    def get_template_configs(self):
+        return [
+            dict(type="settings", custom_bindings=False),
+            dict(type="tab", name="Live Stream")
+        ]
 
-    def get_assets(self):
-        # Define your plugin's asset files to automatically include in the
-        # core UI here.
-        return {
-            "js": ["js/octostreamcontrol.js"],
-            "css": ["css/octostreamcontrol.css"],
-            "less": ["less/octostreamcontrol.less"]
-        }
+    def get_api_commands(self):
+        return dict(start=[], stop=[])
 
-    ##~~ Softwareupdate hook
-
-    def get_update_information(self):
-        # Define the configuration for your plugin to use with the Software Update
-        # Plugin here. See https://docs.octoprint.org/en/master/bundledplugins/softwareupdate.html
-        # for details.
-        return {
-            "octostreamcontrol": {
-                "displayName": "Octostreamcontrol Plugin",
-                "displayVersion": self._plugin_version,
-
-                # version check: github repository
-                "type": "github_release",
-                "user": "cecomp64",
-                "repo": "OctoStreamControl",
-                "current": self._plugin_version,
-
-                # update method: pip
-                "pip": "https://github.com/cecomp64/OctoStreamControl/archive/{target_version}.zip",
-            }
-        }
-
-
-# If you want your plugin to be registered within OctoPrint under a different name than what you defined in setup.py
-# ("OctoPrint-PluginSkeleton"), you may define that here. Same goes for the other metadata derived from setup.py that
-# can be overwritten via __plugin_xyz__ control properties. See the documentation for that.
-__plugin_name__ = "Octostreamcontrol Plugin"
-
-
-# Set the Python version your plugin is compatible with below. Recommended is Python 3 only for all new plugins.
-# OctoPrint 1.4.0 - 1.7.x run under both Python 3 and the end-of-life Python 2.
-# OctoPrint 1.8.0 onwards only supports Python 3.
-__plugin_pythoncompat__ = ">=3,<4"  # Only Python 3
-
-def __plugin_load__():
-    global __plugin_implementation__
-    __plugin_implementation__ = OctostreamcontrolPlugin()
-
-    global __plugin_hooks__
-    __plugin_hooks__ = {
-        "octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information
-    }
+    def on_api_command(self, command, data):
+        if command == "start":
+            self.start_recording()
+        elif command == "stop":
+            self.stop_recording()
