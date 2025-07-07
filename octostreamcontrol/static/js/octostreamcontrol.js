@@ -1,26 +1,31 @@
 /*
- * View model for OctoStreamControl
- *
- * Author: Carl Svensson
- * License: AGPL-3.0-or-later
- */
+* View model for OctoStreamControl
+*
+* Author: Carl Svensson
+* License: AGPL-3.0-or-later
+*/
 
 $(function() {
     function OctoStreamControlViewModel(parameters) {
         var self = this;
-
-        self.settings = parameters[0];
-        self.streamSrc = ko.computed(() => self.settings.settings.stream_url());
-
+        console.log(parameters);
+        self.settingsViewModel = parameters[0];  // Correct naming
+        
         self.startRecording = function() {
             OctoPrint.simpleApiCommand("octostreamcontrol", { action: "start" });
         };
-
+        
         self.stopRecording = function() {
             OctoPrint.simpleApiCommand("octostreamcontrol", { action: "stop" });
         };
+        
+        self.onBeforeBinding = function() {
+            console.log("In onBeforeBinding of OctoStreamControlViewModel");
+            self.settings = self.settingsViewModel.settings.plugins.octostreamcontrol;
+        };
+        
     }
-
+    
     OCTOPRINT_VIEWMODELS.push({
         construct: OctoStreamControlViewModel,
         dependencies: ["settingsViewModel"],

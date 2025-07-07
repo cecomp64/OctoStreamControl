@@ -13,7 +13,17 @@ or manually using this URL:
 
     https://github.com/cecomp64/OctoStreamControl/archive/master.zip
 
+For development, install with
 
+```
+python setup.py install
+```
+
+... and update with
+
+```
+pip install --upgrade .
+```
 
 ## Configuration
 

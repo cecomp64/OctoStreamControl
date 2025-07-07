@@ -34,8 +34,20 @@ class OctoStreamControlPlugin(
   ##--- SettingsPlugin ---##
   def get_settings_defaults(self):
     return {
-      "stream_url": "http://127.0.0.1:8889/webrtc/mystream",
+      "stream_url": "http://127.0.0.1:8889/mystream",
+      "video_dir": "/home/pi/videos",
       "resolution": "640x360"
+    }
+
+    ## this injects these vars into your tab template
+  def get_template_vars(self):
+    self._logger.info("Injecting template vars into tab")
+    stream = self._settings.get(["stream_url"])
+    self._logger.info(f"Injecting stream_url into template: {stream}")
+    return {
+       "stream_url": stream,
+       "resolution": self._settings.get(["resolution"]),
+       "video_dir": self._settings.get(["video_dir"])
     }
 
   ##--- TemplatePlugin ---##
@@ -79,7 +91,10 @@ class OctoStreamControlPlugin(
   ##--- Recording logic ---##
   def start_recording(self):
     url   = self._settings.get(["stream_url"])
-    fname = f"/home/pi/videos/{self._printer.get_current_job()['file']['name']}.mp4"
+    dir_path = self._settings.get(['video_dir'])
+    job_name = self._printer.get_current_job()['file']['name']
+    fname = os.path.join(dir_path, f"{job_name}.mp4")
+
     cmd   = ["ffmpeg", "-y", "-i", url, "-c:v", "copy", fname]
     self._rec = subprocess.Popen(cmd)
     self._logger.info(f"Started recording to {fname}")

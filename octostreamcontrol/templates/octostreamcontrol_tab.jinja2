@@ -1,6 +1,14 @@
-<div>
+<div id="tab_plugin_octostreamcontrol">
   <h3>Live WebRTC Stream</h3>
-  <iframe data-bind="attr: { src: streamSrc }" width="640" height="360" allow="autoplay" frameborder="0"></iframe>
+
+  <iframe data-bind="attr: {
+            src: settings.stream_url,
+            width: settings.resolution().split('x')[0],
+            height: settings.resolution().split('x')[1]
+          }"
+          frameborder="0" allow="autoplay">
+  </iframe>
+
+  <button class="btn btn-success" data-bind="click: startRecording">Start Recording</button>
+  <button class="btn btn-danger"  data-bind="click: stopRecording">Stop Recording</button>
 </div>
-<button class="btn btn-success" data-bind="click: startRecording">Start Recording</button>
-<button class="btn btn-danger" data-bind="click: stopRecording">Stop Recording</button>

@@ -1,9 +1,21 @@
 <h3>OctoStream Control Settings</h3>
-<div class="form-group">
-  <label for="stream_url">Stream URL</label>
-  <input type="text" id="stream_url" name="stream_url" class="form-control" data-bind="value: settings.stream_url"/>
-</div>
-<div class="form-group">
-  <label for="resolution">Resolution</label>
-  <input type="text" id="resolution" name="resolution" class="form-control" data-bind="value: settings.resolution"/>
+
+<div id="settings_plugin_octostreamcontrol" class="settings-section">
+  <div class="form-group">
+    <label for="stream_url">Stream URL</label>
+    <input type="text" id="stream_url" name="stream_url" class="form-control"
+      data-bind="value: settings.plugins.octostreamcontrol.stream_url" />
+  </div>
+  <!-- resolution & video_dir the same -->
+  <div class="form-group">
+    <label for="video_dir">Video Directory</label>
+    <input type="text" id="video_dir" name="video_dir" class="form-control"
+      data-bind="value: settings.plugins.octostreamcontrol.video_dir" />
+  </div>
+  <!-- do the same for resolution -->
+  <div class="form-group">
+    <label for="resolution">Resolution</label>
+    <input type="text" id="resolution" name="resolution" class="form-control"
+      data-bind="value: settings.plugins.octostreamcontrol.resolution" />
+  </div>
 </div>
