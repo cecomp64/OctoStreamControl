@@ -43,6 +43,17 @@ Download the latest version of `MediaMTX` from GitHub: https://github.com/bluenv
 $ ./mediamtx
 ```
 
+If you want multiple streams (i.e. for multiple cameras) then use a `mediamtx.yml` file, like this:
+
+```yml
+paths:
+  mystream:
+    source: publisher
+
+  usbcam:
+    source: publisher
+```
+
 ### Libcamera and FFMPEG
 
 You may need to install `libcamera-utils` on your pi... ask AI for help if you get any errors.  You should
@@ -57,4 +68,33 @@ ffmpeg -fflags +genpts+igndts -use_wallclock_as_timestamps 1 \
   -f rtsp rtsp://localhost:8554/mystream
 ```
 
-Now you should have a WebRTC stream available at `localhost:8554/mystream`.
+Now you should have a WebRTC stream available at `localhost:8554/mystream`.  Another camera can also be used, publishing to a different stream.  For my Arducam 5MP USB camera, this is what works for me:
+
+```sh
+$ ffmpeg -f v4l2 -input_format mjpeg -video_size 1280x720 -i /dev/video8 \
+  -vf "transpose=2,format=yuv420p" \
+  -c:v libx264 -preset ultrafast -tune zerolatency \
+  -bsf:v h264_mp4toannexb \
+  -pix_fmt yuv420p \
+  -f rtsp rtsp://localhost:8554/usbcam  
+```
+
+Figure out what video sources are available using this command:
+
+```sh
+ v4l2-ctl --list-devices
+```
+
+# Development Notes
+
+To push updates once installed:
+
+```sh
+source /opt/octopi/oprint/bin/activate
+pip install --upgrade
+```
+
+... Then, restart Octoprint.
+
+## Commands
+

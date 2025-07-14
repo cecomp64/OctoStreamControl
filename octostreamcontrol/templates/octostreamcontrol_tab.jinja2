@@ -1,15 +1,24 @@
 <div id="tab_plugin_octostreamcontrol">
   <h3>Live WebRTC Stream</h3>
-
-  <iframe data-bind="attr: {
-            src: settings.stream_url,
-            width: settings.resolution().split('x')[0],
-            height: settings.resolution().split('x')[1]
-          }"
-          frameborder="0" allow="autoplay">
-  </iframe>
-
-  <br/>
-  <button class="btn btn-success" data-bind="click: startRecording">Start Recording</button>
-  <button class="btn btn-danger"  data-bind="click: stopRecording">Stop Recording</button>
+  
+  <div data-bind="foreach: streams">
+    <h4 data-bind="text: name"></h4>
+    <p>
+      <strong>WebRTC URL:</strong> <span data-bind="text: webrtc_url"></span><br/>
+      <strong>RTSP URL:</strong> <span data-bind="text: rtsp_url"></span><br/>
+      <strong>FFmpeg Command:</strong> <span data-bind="text: ffmpeg_cmd"></span><br/>
+      <strong>Resolution:</strong> <span data-bind="text: width"></span> x <span data-bind="text: height"></span><br/>
+      <strong>Video Directory:</strong> <span data-bind="text: video_dir"></span><br/>
+      <strong>Enabled:</strong> <span data-bind="text: enabled ? 'Yes' : 'No'"></span>
+    </p>
+    <button data-bind="click: $parent.startRecording">Start Recording</button>
+    <button data-bind="click: $parent.stopRecording">Stop Recording</button>
+    <iframe data-bind="attr: {
+      src: webrtc_url,
+      width: width,
+      height: height
+    }"
+    frameborder="0" allow="autoplay">
+    </iframe>
+  </div>
 </div>

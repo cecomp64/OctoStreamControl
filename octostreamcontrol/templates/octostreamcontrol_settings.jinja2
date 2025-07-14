@@ -1,60 +1,119 @@
+<!--
+
+This file assumes that settings_plugin_octostreamcontrol is bound to OctoStreamControlViewModel
+
+-->
 <h3>OctoStream Control Settings</h3>
 
+<p>
+  Configure settings for each stream individually here.  See below 
+  for a description of each setting.
+</p>
+
 <div id="settings_plugin_octostreamcontrol" class="settings-section">
-  <div class="form-group">
+  <div class="stream-list" data-bind="foreach: streams">
+    <table class="stream-entry">
+      <tr>
+        <th>Stream Name</th>
+        <td>
+          <input type="text" data-bind="value: name" placeholder="Camera" />
+        </td>
+      </tr>
+      <tr>
+        <th>WebRTC URL</th>
+        <td>
+          <input type="text" data-bind="value: webrtc_url" placeholder="WebRTC URL" />
+        </td>
+      </tr>
+      <tr>
+        <th>RTSP URL</th>
+        <td>
+          <input type="text" data-bind="value: rtsp_url" placeholder="RTSP URL" />
+        </td>
+      </tr>
+      <tr>
+        <th>FFmpeg Command</th>
+        <td>
+          <input type="text" data-bind="value: ffmpeg_cmd" placeholder="FFmpeg Command" />
+        </td>
+      </tr>
+      <tr>
+        <th>Width</th>
+        <td>
+          <input type="text" data-bind="value: width" placeholder="Width" />
+        </td>
+      </tr>
+      <tr>
+        <th>Height</th>
+        <td>
+          <input type="text" data-bind="value: height" placeholder="Height" />
+        </td>
+      </tr>
+      <tr>
+        <th>Video Directory</th>
+        <td>
+          <input type="text" data-bind="value: video_dir" placeholder="Video Directory" />
+        </td>
+      </tr>
+      <tr>
+        <th>Enabled</th>
+        <td>
+          <input type="checkbox" data-bind="checked: enabled" />
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2">
+          <button data-bind="click: $parent.removeStream">Remove</button>
+        </td>
+      </tr>
+    </table>
+  </div>
+  
+  <button data-bind="click: addStream">Add Stream</button><br/>
+  
+  <div class="stream-settings-info">
     <label for="stream_url">Stream URL</label>
     <small>
       The URL for your web-accessible stream.  This should return HTML for rendering video.
       For example, if you are using a WebRTC stream, it might look like:
       <code>http://localhost:8889/mystream</code>.
     </small>
-    <br/>
-    <input type="text" id="stream_url" name="stream_url" class="form-control"
-      data-bind="value: settings.plugins.octostreamcontrol.stream_url" />
   </div>
+  
   <!-- same format for ffmpeg_cmd-->
-  <div class="form-group">
+  <div class="stream-settings-info">
     <label for="ffmpeg_cmd">FFmpeg Command</label>
     <small>
       The command to run FFmpeg for recording. This should be a valid FFmpeg command, but without the input or output, which will be filled in by this plugin.
       Ensure that the command is correct and that FFmpeg is installed on your system.
     </small>
-    <br/>
-    <input type="text" id="ffmpeg_cmd" name="ffmpeg_cmd" class="form-control" style="width: 100%;"
-      data-bind="value: settings.plugins.octostreamcontrol.ffmpeg_cmd" />
   </div>
+  
   <!-- same format for rstp_url-->
-  <div class="form-group">
+  <div class="stream-settings-info">
     <label for="rtsp_url">RTSP URL</label>
     <small>
       The URL for your RTSP stream. This is used for recording.
       For example, it might look like: <code>rtsp://localhost:8554/mystream</code>.
       Ensure that your RTSP server is configured correctly to serve this stream.
     </small>
-    <br/>
-    <input type="text" id="rtsp_url" name="rtsp_url" class="form-control"
-      data-bind="value: settings.plugins.octostreamcontrol.rtsp_url" />
   </div>
+  
   <!-- resolution & video_dir the same -->
-  <div class="form-group">
+  <div class="stream-settings-info">
     <label for="video_dir">Video Directory</label>
     <small>
       The directory where recorded videos will be saved. Ensure that the OctoPrint user has write permissions to this directory.
       For example, it might look like: <code>/home/pi/videos</code>.
     </small>
-    <br/>
-    <input type="text" id="video_dir" name="video_dir" class="form-control"
-      data-bind="value: settings.plugins.octostreamcontrol.video_dir" />
   </div>
+  
   <!-- do the same for resolution -->
-  <div class="form-group">
-    <label for="resolution">Resolution</label>
+  <div class="stream-settings-info">
+    <label for="resolution">Resolution (Width, Height)</label>
     <small>
-      The resolution for the video stream. This should be in the format <code>WIDTHxHEIGHT</code>, e.g., <code>640x360</code>.
+      The resolution for the video stream. 
       Ensure that this matches the capabilities of your camera and stream.
     </small>
-    <br/>
-    <input type="text" id="resolution" name="resolution" class="form-control"
-      data-bind="value: settings.plugins.octostreamcontrol.resolution" />
   </div>
 </div>

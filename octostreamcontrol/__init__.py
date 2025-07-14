@@ -5,6 +5,7 @@ from octoprint.plugin import (
   AssetPlugin, EventHandlerPlugin, SimpleApiPlugin
 )
 from datetime import datetime
+import shlex
 
 class OctoStreamControlPlugin(
     StartupPlugin,
@@ -24,35 +25,36 @@ class OctoStreamControlPlugin(
 
         # version check URL etc...
         "type": "github_release",
-        "user": "you",
+        "user": "cecomp64",
         "repo": "octostreamcontrol",
         "current": self._plugin_version,
 
-        "pip": "https://github.com/you/octostreamcontrol/archive/{target_version}.zip"
+        "pip": "https://github.com/cecomp64/octostreamcontrol/archive/{target_version}.zip"
       }
     }
 
   ##--- SettingsPlugin ---##
   def get_settings_defaults(self):
     return {
-      "stream_url": "http://localhost:8889/mystream",
-      "rstp_url": "rtsp://localhost:8554/mystream",
-      "video_dir": "/home/pi/videos",
-      "ffmpeg_cmd": "ffmpeg -c:v libx264 -preset slow -crf 23 -c:a aac -b:a 128k -movflags +faststart",
-      "resolution": "640x360"
+      "streams": [
+        {
+          "name": "Camera 1",
+          "webrtc_url": "http://localhost:8889/mystream",
+          "rtsp_url": "rtsp://localhost:8554/mystream",
+          "video_dir": "/home/pi/videos",
+          "ffmpeg_cmd": "ffmpeg -c:v libx264 -preset slow -crf 23 -c:a aac -b:a 128k -movflags +faststart",
+          "width": "640",
+          "height": "360",
+          "enabled": True
+        }
+      ]
     }
 
     ## this injects these vars into your tab template
   def get_template_vars(self):
     self._logger.info("Injecting template vars into tab")
-    stream = self._settings.get(["stream_url"])
-    self._logger.info(f"Injecting stream_url into template: {stream}")
     return {
-       "stream_url": stream,
-       "rstp_url": self._settings.get(["rstp_url"]),
-       "ffmpeg_cmd": self._settings.get(["ffmpeg_cmd"]),
-       "resolution": self._settings.get(["resolution"]),
-       "video_dir": self._settings.get(["video_dir"])
+       "streams": self._settings.get(["streams"])
     }
 
   ##--- TemplatePlugin ---##
@@ -60,7 +62,7 @@ class OctoStreamControlPlugin(
     return [
       {
         "type": "settings",
-        "custom_bindings": False
+        "custom_bindings": True
       },
       {
         "type": "tab",
@@ -93,6 +95,22 @@ class OctoStreamControlPlugin(
     elif command == "stop":
       self.stop_recording()
 
+  def record_stream(self, url, dir_path, ffmpeg_cmd, filename):
+    """
+    Record the stream from the given URL to the specified directory using ffmpeg.
+    """
+    # Make the directory if it doesn't exist
+    if not os.path.exists(dir_path):
+      os.makedirs(dir_path)
+
+    # rtsp://localhost:8554/mystream
+    #cmd   = [ffmpeg_cmd, "-i", url, fname]
+    cmd = shlex.split(ffmpeg_cmd) + ["-i", url, filename]
+
+    self._rec = subprocess.Popen(cmd)
+    self._logger.info(f"Started recording to {filename}")
+
+
   ##--- Recording logic ---##
   def start_recording(self):
     url   = self._settings.get(["rstp_url"])
@@ -116,11 +134,8 @@ class OctoStreamControlPlugin(
     # Make the directory if it doesn't exist
     if not os.path.exists(dir_path):
       os.makedirs(dir_path)
-
-    # rtsp://localhost:8554/mystream
-    cmd   = [ffmpeg_cmd, "-i", url, fname]
-    self._rec = subprocess.Popen(cmd)
-    self._logger.info(f"Started recording to {fname}")
+    
+    self.record_stream(url, dir_path, ffmpeg_cmd, fname)
 
   def stop_recording(self):
     if hasattr(self, "_rec") and self._rec.poll() is None:
