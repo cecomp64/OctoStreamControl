@@ -98,3 +98,21 @@ pip install --upgrade
 
 ## Commands
 
+```sh
+sudo systemctl stop webcamd
+cd mediamtx && ./mediamtx
+
+
+libcamera-vid -v 0 -t 0 --codec h264 --inline --libav-format h264 --autofocus-mode auto --gain 1.0 -o - | \
+ffmpeg -fflags +genpts+igndts -use_wallclock_as_timestamps 1 \
+  -f h264 -i - -vf "transpose=2" -c:v libx264 -preset ultrafast -tune zerolatency \
+  -f rtsp rtsp://localhost:8554/mystream
+
+ffmpeg -f v4l2 -input_format mjpeg -video_size 1280x720 -i /dev/video8 \
+  -vf "transpose=2,format=yuv420p" \
+  -c:v libx264 -preset ultrafast -tune zerolatency \
+  -bsf:v h264_mp4toannexb \
+  -pix_fmt yuv420p \
+  -f rtsp rtsp://localhost:8554/usbcam  
+
+```
