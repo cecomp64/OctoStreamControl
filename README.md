@@ -91,7 +91,7 @@ To push updates once installed:
 
 ```sh
 source /opt/octopi/oprint/bin/activate
-pip install --upgrade
+pip install --upgrade .
 ```
 
 ... Then, restart Octoprint.
