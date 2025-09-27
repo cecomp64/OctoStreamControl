@@ -22,24 +22,63 @@ $(function() {
         self.onBeforeBinding = function() {
             console.log("In onBeforeBinding of OctoStreamControlViewModel");
             self.settings = self.settingsViewModel.settings.plugins.octostreamcontrol;
-            self.streams = ko.observableArray(self.settings.streams());
-            
+
+            // Convert existing streams to observables
+            var existingStreams = self.settings.streams() || [];
+            var observableStreams = existingStreams.map(function(stream) {
+                return {
+                    name: ko.observable(stream.name || ""),
+                    webrtc_url: ko.observable(stream.webrtc_url || ""),
+                    rtsp_url: ko.observable(stream.rtsp_url || ""),
+                    ffmpeg_cmd: ko.observable(stream.ffmpeg_cmd || ""),
+                    video_dir: ko.observable(stream.video_dir || ""),
+                    width: ko.observable(stream.width || "640"),
+                    height: ko.observable(stream.height || "480"),
+                    enabled: ko.observable(stream.enabled !== false)
+                };
+            });
+            self.streams = ko.observableArray(observableStreams);
+
             self.addStream = function() {
                 console.log("Adding new stream");
-                self.streams.push({ name: "", webrtc_url: "", rtsp_url: "", ffmpeg_cmd: "", video_dir: "", width: "640", height: "480", enabled: true });
+                self.streams.push({
+                    name: ko.observable(""),
+                    webrtc_url: ko.observable(""),
+                    rtsp_url: ko.observable(""),
+                    ffmpeg_cmd: ko.observable(""),
+                    video_dir: ko.observable(""),
+                    width: ko.observable("640"),
+                    height: ko.observable("480"),
+                    enabled: ko.observable(true)
+                });
             };
-            
+
             self.removeStream = function(stream) {
-                console.log(`Removing stream ${stream.name}`);
+                console.log(`Removing stream ${stream.name()}`);
                 self.streams.remove(stream);
-            };
-            
-            self.onBeforeSave = function() {
-                self.settings.streams(self.streams());
             };
 
             console.log(self);
             console.log(self.settingsViewModel);
+        };
+
+        self.onSettingsBeforeSave = function() {
+            console.log("Saving settings - syncing streams");
+            // Convert observableArray of observables back to plain objects
+            var plainStreams = self.streams().map(function(stream) {
+                return {
+                    name: stream.name(),
+                    webrtc_url: stream.webrtc_url(),
+                    rtsp_url: stream.rtsp_url(),
+                    ffmpeg_cmd: stream.ffmpeg_cmd(),
+                    video_dir: stream.video_dir(),
+                    width: stream.width(),
+                    height: stream.height(),
+                    enabled: stream.enabled()
+                };
+            });
+            self.settings.streams(plainStreams);
+            console.log("Synced streams:", plainStreams);
         };
     }
     
