@@ -16,6 +16,12 @@ class OctoStreamControlPlugin(
     SimpleApiPlugin
 ):
 
+  ##--- StartupPlugin ---##
+  def on_after_startup(self):
+    self._logger.info("OctoStreamControl UPDATED VERSION loaded successfully!")
+    streams = self._settings.get(["streams"])
+    self._logger.info(f"Found {len(streams) if streams else 0} configured streams")
+
   ##--- Plugin metadata (optional, but helps) ---##
   def get_update_information(self):
     return {
@@ -110,9 +116,15 @@ class OctoStreamControlPlugin(
       os.makedirs(dir_path)
 
     cmd = shlex.split(ffmpeg_cmd) + ["-i", url, filename]
+    self._logger.info(f"Executing FFmpeg command for '{stream_name}': {' '.join(cmd)}")
 
     try:
-      process = subprocess.Popen(cmd)
+      process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True
+      )
 
       # Track this recording process
       if not hasattr(self, "_recordings"):
@@ -121,10 +133,24 @@ class OctoStreamControlPlugin(
       self._recordings.append({
         "process": process,
         "stream_name": stream_name,
-        "filename": filename
+        "filename": filename,
+        "cmd": cmd
       })
 
-      self._logger.info(f"Started recording stream '{stream_name}' to {filename}")
+      self._logger.info(f"Started recording stream '{stream_name}' to {filename} (PID: {process.pid})")
+
+      # Check if process started successfully (give it a moment)
+      import time
+      time.sleep(0.5)
+      if process.poll() is not None:
+        # Process already terminated
+        stdout, stderr = process.communicate()
+        self._logger.error(f"FFmpeg process for '{stream_name}' terminated immediately!")
+        self._logger.error(f"Exit code: {process.returncode}")
+        self._logger.error(f"STDOUT: {stdout}")
+        self._logger.error(f"STDERR: {stderr}")
+        # Remove from recordings list since it failed
+        self._recordings = [r for r in self._recordings if r["process"] != process]
 
     except Exception as e:
       self._logger.error(f"Failed to start ffmpeg process for stream '{stream_name}': {e}")
@@ -181,9 +207,27 @@ class OctoStreamControlPlugin(
     if hasattr(self, "_recordings"):
       for recording in self._recordings:
         try:
-          if recording["process"].poll() is None:
-            recording["process"].terminate()
-            self._logger.info(f"Stopped recording for stream '{recording['stream_name']}'")
+          process = recording["process"]
+          stream_name = recording["stream_name"]
+
+          if process.poll() is None:
+            # Process is still running, terminate it
+            process.terminate()
+            # Wait a bit for graceful termination
+            try:
+              process.wait(timeout=5)
+              self._logger.info(f"Stopped recording for stream '{stream_name}'")
+            except subprocess.TimeoutExpired:
+              # Force kill if it doesn't terminate gracefully
+              process.kill()
+              self._logger.warning(f"Force killed recording process for stream '{stream_name}'")
+          else:
+            # Process already terminated, check why
+            stdout, stderr = process.communicate()
+            self._logger.error(f"Recording for '{stream_name}' already terminated with exit code {process.returncode}")
+            if stderr:
+              self._logger.error(f"FFmpeg stderr for '{stream_name}': {stderr}")
+
         except Exception as e:
           self._logger.error(f"Error stopping recording for stream '{recording['stream_name']}': {e}")
 
