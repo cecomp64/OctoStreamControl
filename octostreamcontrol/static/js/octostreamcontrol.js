@@ -23,7 +23,10 @@ $(function() {
             console.log("In onBeforeBinding of OctoStreamControlViewModel");
             self.settings = self.settingsViewModel.settings.plugins.octostreamcontrol;
 
-            // Convert existing streams to observables
+            // Keep original streams data for tab template (plain objects)
+            self.streams = self.settings.streams;
+
+            // Create separate observables for settings view
             var existingStreams = self.settings.streams() || [];
             var observableStreams = existingStreams.map(function(stream) {
                 return {
@@ -37,11 +40,13 @@ $(function() {
                     enabled: ko.observable(stream.enabled !== false)
                 };
             });
-            self.streams = ko.observableArray(observableStreams);
+
+            // Use separate variable for settings UI
+            self.settingsStreams = ko.observableArray(observableStreams);
 
             self.addStream = function() {
                 console.log("Adding new stream");
-                self.streams.push({
+                self.settingsStreams.push({
                     name: ko.observable(""),
                     webrtc_url: ko.observable(""),
                     rtsp_url: ko.observable(""),
@@ -55,7 +60,7 @@ $(function() {
 
             self.removeStream = function(stream) {
                 console.log(`Removing stream ${stream.name()}`);
-                self.streams.remove(stream);
+                self.settingsStreams.remove(stream);
             };
 
             console.log(self);
@@ -65,7 +70,7 @@ $(function() {
         self.onSettingsBeforeSave = function() {
             console.log("Saving settings - syncing streams");
             // Convert observableArray of observables back to plain objects
-            var plainStreams = self.streams().map(function(stream) {
+            var plainStreams = self.settingsStreams().map(function(stream) {
                 return {
                     name: stream.name(),
                     webrtc_url: stream.webrtc_url(),
