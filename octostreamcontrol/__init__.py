@@ -116,6 +116,7 @@ class OctoStreamControlPlugin(
       os.makedirs(dir_path)
 
     # Replace INPUT_URL placeholder with actual URL, or use old format if no placeholder
+    self._logger.info(f"Configured FFmpeg command for '{stream_name}': {' '.join(ffmpeg_cmd)}")
     if "INPUT_URL" in ffmpeg_cmd:
       cmd_with_url = ffmpeg_cmd.replace("INPUT_URL", url)
       cmd = shlex.split(cmd_with_url) + [filename]
