@@ -48,7 +48,7 @@ class OctoStreamControlPlugin(
           "webrtc_url": "http://localhost:8889/mystream",
           "rtsp_url": "rtsp://localhost:8554/mystream",
           "video_dir": "/home/pi/videos",
-          "ffmpeg_cmd": "ffmpeg -c:v libx264 -preset slow -crf 23 -c:a aac -b:a 128k -movflags +faststart",
+          "ffmpeg_cmd": "ffmpeg -i INPUT_URL -c:v libx264 -preset slow -crf 23 -c:a aac -b:a 128k -movflags +faststart",
           "width": "640",
           "height": "360",
           "enabled": True
@@ -115,7 +115,13 @@ class OctoStreamControlPlugin(
     if not os.path.exists(dir_path):
       os.makedirs(dir_path)
 
-    cmd = shlex.split(ffmpeg_cmd) + ["-i", url, filename]
+    # Replace INPUT_URL placeholder with actual URL, or use old format if no placeholder
+    if "INPUT_URL" in ffmpeg_cmd:
+      cmd_with_url = ffmpeg_cmd.replace("INPUT_URL", url)
+      cmd = shlex.split(cmd_with_url) + [filename]
+    else:
+      # Legacy format: ffmpeg options without -i
+      cmd = shlex.split(ffmpeg_cmd) + ["-i", url, filename]
     self._logger.info(f"Executing FFmpeg command for '{stream_name}': {' '.join(cmd)}")
 
     try:
