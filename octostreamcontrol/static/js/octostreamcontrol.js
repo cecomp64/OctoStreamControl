@@ -23,68 +23,43 @@ $(function() {
             console.log("In onBeforeBinding of OctoStreamControlViewModel");
             self.settings = self.settingsViewModel.settings.plugins.octostreamcontrol;
 
-            // Keep original streams data for tab template (plain objects)
+            // For tab template - keep reference to original settings streams
             self.streams = self.settings.streams;
 
-            // Create separate observables for settings view
-            var existingStreams = self.settings.streams() || [];
-            var observableStreams = existingStreams.map(function(stream) {
-                return {
-                    name: ko.observable(stream.name || ""),
-                    webrtc_url: ko.observable(stream.webrtc_url || ""),
-                    rtsp_url: ko.observable(stream.rtsp_url || ""),
-                    ffmpeg_cmd: ko.observable(stream.ffmpeg_cmd || ""),
-                    video_dir: ko.observable(stream.video_dir || ""),
-                    width: ko.observable(stream.width || "640"),
-                    height: ko.observable(stream.height || "480"),
-                    enabled: ko.observable(stream.enabled !== false)
-                };
-            });
-
-            // Use separate variable for settings UI
-            self.settingsStreams = ko.observableArray(observableStreams);
+            // For settings template - use the settings streams directly but make sure they're observable
+            // The settings object should already have observables
 
             self.addStream = function() {
                 console.log("Adding new stream");
-                self.settingsStreams.push({
-                    name: ko.observable(""),
-                    webrtc_url: ko.observable(""),
-                    rtsp_url: ko.observable(""),
-                    ffmpeg_cmd: ko.observable(""),
-                    video_dir: ko.observable(""),
-                    width: ko.observable("640"),
-                    height: ko.observable("480"),
-                    enabled: ko.observable(true)
+                var currentStreams = self.settings.streams() || [];
+                currentStreams.push({
+                    name: "",
+                    webrtc_url: "",
+                    rtsp_url: "",
+                    ffmpeg_cmd: "ffmpeg -i INPUT_URL -c:v libx264 -preset slow -crf 23 -c:a aac -b:a 128k -movflags +faststart",
+                    video_dir: "",
+                    width: "640",
+                    height: "480",
+                    enabled: true
                 });
+                self.settings.streams(currentStreams);
             };
 
             self.removeStream = function(stream) {
-                console.log(`Removing stream ${stream.name()}`);
-                self.settingsStreams.remove(stream);
+                console.log(`Removing stream`);
+                var currentStreams = self.settings.streams() || [];
+                var index = currentStreams.indexOf(stream);
+                if (index > -1) {
+                    currentStreams.splice(index, 1);
+                    self.settings.streams(currentStreams);
+                }
             };
 
             console.log(self);
             console.log(self.settingsViewModel);
         };
 
-        self.onSettingsBeforeSave = function() {
-            console.log("Saving settings - syncing streams");
-            // Convert observableArray of observables back to plain objects
-            var plainStreams = self.settingsStreams().map(function(stream) {
-                return {
-                    name: stream.name(),
-                    webrtc_url: stream.webrtc_url(),
-                    rtsp_url: stream.rtsp_url(),
-                    ffmpeg_cmd: stream.ffmpeg_cmd(),
-                    video_dir: stream.video_dir(),
-                    width: stream.width(),
-                    height: stream.height(),
-                    enabled: stream.enabled()
-                };
-            });
-            self.settings.streams(plainStreams);
-            console.log("Synced streams:", plainStreams);
-        };
+        // Settings will save automatically since we're using the settings object directly
     }
     
     OCTOPRINT_VIEWMODELS.push({
