@@ -1,24 +1,33 @@
 <div id="tab_plugin_octostreamcontrol">
   <h3>Live WebRTC Stream</h3>
-  
+
+  <!-- Global recording controls -->
+  <div style="margin-bottom: 20px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
+    <h4>Recording Controls</h4>
+    <p>Control recording for all enabled streams:</p>
+    <button data-bind="click: startRecording" class="btn btn-primary">Start Recording All Streams</button>
+    <button data-bind="click: stopRecording" class="btn btn-danger">Stop Recording All Streams</button>
+  </div>
+
+  <!-- Stream display -->
   <div data-bind="foreach: streams">
-    <h4 data-bind="text: name"></h4>
-    <p>
-      <strong>WebRTC URL:</strong> <span data-bind="text: webrtc_url"></span><br/>
-      <strong>RTSP URL:</strong> <span data-bind="text: rtsp_url"></span><br/>
-      <strong>FFmpeg Command:</strong> <span data-bind="text: ffmpeg_cmd"></span><br/>
-      <strong>Resolution:</strong> <span data-bind="text: width"></span> x <span data-bind="text: height"></span><br/>
-      <strong>Video Directory:</strong> <span data-bind="text: video_dir"></span><br/>
-      <strong>Enabled:</strong> <span data-bind="text: enabled ? 'Yes' : 'No'"></span>
-    </p>
-    <button data-bind="click: $parent.startRecording">Start Recording</button>
-    <button data-bind="click: $parent.stopRecording">Stop Recording</button>
-    <iframe data-bind="attr: {
-      src: webrtc_url,
-      width: width,
-      height: height
-    }"
-    frameborder="0" allow="autoplay">
-    </iframe>
+    <div style="margin-bottom: 20px; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
+      <h4 data-bind="text: name"></h4>
+      <p>
+        <strong>WebRTC URL:</strong> <span data-bind="text: webrtc_url"></span><br/>
+        <strong>RTSP URL:</strong> <span data-bind="text: rtsp_url"></span><br/>
+        <strong>FFmpeg Command:</strong> <span data-bind="text: ffmpeg_cmd"></span><br/>
+        <strong>Resolution:</strong> <span data-bind="text: width"></span> x <span data-bind="text: height"></span><br/>
+        <strong>Video Directory:</strong> <span data-bind="text: video_dir"></span><br/>
+        <strong>Enabled:</strong> <span data-bind="text: enabled ? 'Yes' : 'No'"></span>
+      </p>
+      <iframe data-bind="attr: {
+        src: webrtc_url,
+        width: width,
+        height: height
+      }"
+      frameborder="0" allow="autoplay">
+      </iframe>
+    </div>
   </div>
 </div>
