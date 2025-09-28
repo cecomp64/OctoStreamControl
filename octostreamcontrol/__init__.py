@@ -48,7 +48,7 @@ class OctoStreamControlPlugin(
           "webrtc_url": "http://localhost:8889/mystream",
           "rtsp_url": "rtsp://localhost:8554/mystream",
           "video_dir": "/home/pi/videos",
-          "ffmpeg_cmd": "ffmpeg -i INPUT_URL -c:v libx264 -preset slow -crf 23 -c:a aac -b:a 128k -movflags +frag_keyframe+empty_moov+faststart",
+          "ffmpeg_cmd": "ffmpeg -i INPUT_URL -c:v libx264 -preset veryfast -crf 25 -g 30 -bf 0 -c:a aac -b:a 128k -movflags +frag_keyframe+empty_moov+faststart",
           "width": "640",
           "height": "360",
           "enabled": True
@@ -126,11 +126,13 @@ class OctoStreamControlPlugin(
     self._logger.info(f"Executing FFmpeg command for '{stream_name}': {' '.join(cmd)}")
 
     try:
+      # Start FFmpeg with lower priority to avoid interfering with OctoPrint
       process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        universal_newlines=True
+        universal_newlines=True,
+        preexec_fn=lambda: os.nice(10)  # Lower priority (higher nice value)
       )
 
       # Track this recording process
@@ -145,6 +147,15 @@ class OctoStreamControlPlugin(
       })
 
       self._logger.info(f"Started recording stream '{stream_name}' to {filename} (PID: {process.pid})")
+
+      # Log system resources for diagnostics
+      try:
+        import psutil
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+        memory = psutil.virtual_memory()
+        self._logger.info(f"System resources at recording start - CPU: {cpu_percent}%, Memory: {memory.percent}%")
+      except ImportError:
+        self._logger.info("psutil not available for resource monitoring")
 
       # Check if process started successfully (give it a moment)
       import time
