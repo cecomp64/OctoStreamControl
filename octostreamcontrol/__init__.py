@@ -48,7 +48,7 @@ class OctoStreamControlPlugin(
           "webrtc_url": "http://localhost:8889/mystream",
           "rtsp_url": "rtsp://localhost:8554/mystream",
           "video_dir": "/home/pi/videos",
-          "ffmpeg_cmd": "ffmpeg -i INPUT_URL -c:v libx264 -preset slow -crf 23 -c:a aac -b:a 128k -movflags +faststart",
+          "ffmpeg_cmd": "ffmpeg -i INPUT_URL -c:v libx264 -preset slow -crf 23 -c:a aac -b:a 128k -movflags +frag_keyframe+empty_moov+faststart",
           "width": "640",
           "height": "360",
           "enabled": True
@@ -218,16 +218,34 @@ class OctoStreamControlPlugin(
           stream_name = recording["stream_name"]
 
           if process.poll() is None:
-            # Process is still running, terminate it
-            process.terminate()
-            # Wait a bit for graceful termination
+            # Process is still running, send SIGTERM for graceful shutdown
+            import signal
+            import os
             try:
-              process.wait(timeout=5)
-              self._logger.info(f"Stopped recording for stream '{stream_name}'")
+              # Send SIGTERM first (allows FFmpeg to finalize the file)
+              process.terminate()
+              self._logger.info(f"Sent termination signal to recording process for stream '{stream_name}'")
+
+              # Wait longer for FFmpeg to finalize the video file properly
+              process.wait(timeout=30)
+              self._logger.info(f"Stopped recording for stream '{stream_name}' gracefully")
+
             except subprocess.TimeoutExpired:
-              # Force kill if it doesn't terminate gracefully
-              process.kill()
-              self._logger.warning(f"Force killed recording process for stream '{stream_name}'")
+              # If still running after 30 seconds, send SIGINT (Ctrl+C equivalent)
+              try:
+                if hasattr(signal, 'SIGINT'):
+                  os.kill(process.pid, signal.SIGINT)
+                  self._logger.info(f"Sent SIGINT to recording process for stream '{stream_name}'")
+                  process.wait(timeout=10)
+                  self._logger.info(f"Stopped recording for stream '{stream_name}' with SIGINT")
+              except (subprocess.TimeoutExpired, ProcessLookupError):
+                # Last resort - force kill
+                try:
+                  process.kill()
+                  self._logger.warning(f"Force killed recording process for stream '{stream_name}' as last resort")
+                except ProcessLookupError:
+                  # Process already dead
+                  pass
           else:
             # Process already terminated, check why
             stdout, stderr = process.communicate()

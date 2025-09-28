@@ -36,7 +36,7 @@ $(function() {
                     name: "",
                     webrtc_url: "",
                     rtsp_url: "",
-                    ffmpeg_cmd: "ffmpeg -i INPUT_URL -c:v libx264 -preset slow -crf 23 -c:a aac -b:a 128k -movflags +faststart",
+                    ffmpeg_cmd: "ffmpeg -i INPUT_URL -c:v libx264 -preset slow -crf 23 -c:a aac -b:a 128k -movflags +frag_keyframe+empty_moov+faststart",
                     video_dir: "",
                     width: "640",
                     height: "480",
