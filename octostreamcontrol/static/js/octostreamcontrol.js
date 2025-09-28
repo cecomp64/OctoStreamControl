@@ -10,18 +10,91 @@ $(function() {
         var self = this;
         console.log(parameters);
         self.settingsViewModel = parameters[0];  // Correct naming
-        
+
+        // Recording state observables
+        self.isRecording = ko.observable(false);
+        self.activeStreams = ko.observable(0);
+
         self.startRecording = function() {
-            OctoPrint.simpleApiCommand("octostreamcontrol", "start");
+            console.log("Starting recording...");
+            OctoPrint.simpleApiCommand("octostreamcontrol", "start")
+                .done(function(response) {
+                    console.log("Start recording response:", response);
+                    if (response.success) {
+                        self.isRecording(response.recording);
+                        // Status update will come via plugin message
+                    } else {
+                        console.error("Failed to start recording");
+                    }
+                })
+                .fail(function() {
+                    console.error("Failed to communicate with plugin");
+                    new PNotify({
+                        title: "Recording Error",
+                        text: "Failed to start recording - communication error",
+                        type: "error"
+                    });
+                });
         };
 
         self.stopRecording = function() {
-            OctoPrint.simpleApiCommand("octostreamcontrol", "stop");
+            console.log("Stopping recording...");
+            OctoPrint.simpleApiCommand("octostreamcontrol", "stop")
+                .done(function(response) {
+                    console.log("Stop recording response:", response);
+                    if (response.success) {
+                        self.isRecording(response.recording);
+                        // Status update will come via plugin message
+                    } else {
+                        console.error("Failed to stop recording");
+                    }
+                })
+                .fail(function() {
+                    console.error("Failed to communicate with plugin");
+                    new PNotify({
+                        title: "Recording Error",
+                        text: "Failed to stop recording - communication error",
+                        type: "error"
+                    });
+                });
+        };
+
+        // Check recording status on startup
+        self.checkRecordingStatus = function() {
+            OctoPrint.simpleApiCommand("octostreamcontrol", "status")
+                .done(function(response) {
+                    console.log("Recording status:", response);
+                    self.isRecording(response.recording);
+                    self.activeStreams(response.active_streams);
+                });
         };
         
+        // Handle plugin messages
+        self.onDataUpdaterPluginMessage = function(plugin, data) {
+            if (plugin !== "octostreamcontrol") return;
+
+            console.log("Received plugin message:", data);
+
+            if (data.type === "notification") {
+                // Show notification using PNotify
+                new PNotify({
+                    title: "OctoStream Control",
+                    text: data.message,
+                    type: data.notification_type
+                });
+            } else if (data.type === "recording_state") {
+                // Update recording state
+                self.isRecording(data.recording);
+                self.activeStreams(data.active_streams);
+            }
+        };
+
         self.onBeforeBinding = function() {
             console.log("In onBeforeBinding of OctoStreamControlViewModel");
             self.settings = self.settingsViewModel.settings.plugins.octostreamcontrol;
+
+            // Check initial recording status
+            self.checkRecordingStatus();
 
             // For tab template - keep reference to original settings streams
             self.streams = self.settings.streams;

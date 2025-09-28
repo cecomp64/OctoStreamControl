@@ -5,8 +5,23 @@
   <div style="margin-bottom: 20px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
     <h4>Recording Controls</h4>
     <p>Control recording for all enabled streams:</p>
-    <button data-bind="click: startRecording" class="btn btn-primary">Start Recording All Streams</button>
-    <button data-bind="click: stopRecording" class="btn btn-danger">Stop Recording All Streams</button>
+    <div style="margin-bottom: 10px;">
+      <button data-bind="click: startRecording, enable: !isRecording()" class="btn btn-primary">
+        <span data-bind="visible: !isRecording()">Start Recording All Streams</span>
+        <span data-bind="visible: isRecording()">Recording in Progress...</span>
+      </button>
+      <button data-bind="click: stopRecording, enable: isRecording()" class="btn btn-danger">Stop Recording All Streams</button>
+    </div>
+    <div data-bind="visible: isRecording()" style="font-size: 12px; color: #666;">
+      <i class="fa fa-circle" style="color: #d9534f; animation: blink 1s infinite;"></i>
+      Currently recording <span data-bind="text: activeStreams"></span> stream(s)
+    </div>
+    <style>
+      @keyframes blink {
+        0%, 50% { opacity: 1; }
+        51%, 100% { opacity: 0.3; }
+      }
+    </style>
   </div>
 
   <!-- Stream display -->

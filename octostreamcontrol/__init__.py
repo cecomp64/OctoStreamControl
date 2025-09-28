@@ -99,13 +99,40 @@ class OctoStreamControlPlugin(
 
   ##--- SimpleApiPlugin ---##
   def get_api_commands(self):
-    return {"start": [], "stop": []}
+    return {"start": [], "stop": [], "status": []}
 
   def on_api_command(self, command, data):
+    import flask
     if command == "start":
-      self.start_recording()
+      success = self.start_recording()
+      return flask.jsonify(dict(success=success, recording=self.is_recording()))
     elif command == "stop":
-      self.stop_recording()
+      success = self.stop_recording()
+      return flask.jsonify(dict(success=success, recording=self.is_recording()))
+    elif command == "status":
+      return flask.jsonify(dict(recording=self.is_recording(), active_streams=self.get_active_stream_count()))
+
+  def is_recording(self):
+    """Check if any streams are currently recording"""
+    if not hasattr(self, "_recordings"):
+      return False
+    # Check if any recording processes are still alive
+    active_recordings = [r for r in self._recordings if r["process"].poll() is None]
+    return len(active_recordings) > 0
+
+  def get_active_stream_count(self):
+    """Get count of active recording streams"""
+    if not hasattr(self, "_recordings"):
+      return 0
+    return len([r for r in self._recordings if r["process"].poll() is None])
+
+  def send_notification(self, message, type="info"):
+    """Send notification to frontend"""
+    self._plugin_manager.send_plugin_message(self._identifier, dict(
+      type="notification",
+      message=message,
+      notification_type=type
+    ))
 
   def record_stream(self, url, dir_path, ffmpeg_cmd, filename, stream_name="stream"):
     """
@@ -180,11 +207,18 @@ class OctoStreamControlPlugin(
     streams = self._settings.get(["streams"])
     if not streams:
       self._logger.error("No streams configured")
-      return
+      self.send_notification("No streams configured", "error")
+      return False
+
+    # Check if already recording
+    if self.is_recording():
+      self._logger.warning("Recording already in progress")
+      self.send_notification("Recording already in progress", "warning")
+      return False
 
     job_name = self._printer.get_current_job()['file']['name']
     if not job_name:
-      job_name = "default_job"
+      job_name = "manual_recording"
 
     # Create base filename with timestamp
     job_name = job_name.replace(" ", "_").replace("/", "_")
@@ -197,11 +231,15 @@ class OctoStreamControlPlugin(
     if not hasattr(self, "_recordings"):
       self._recordings = []
 
+    successful_starts = 0
+    enabled_streams = 0
+
     # Start recording for each enabled stream
     for i, stream in enumerate(streams):
       if not stream.get("enabled", True):
         continue
 
+      enabled_streams += 1
       url = stream.get("rtsp_url")
       dir_path = stream.get("video_dir")
       ffmpeg_cmd = stream.get("ffmpeg_cmd")
@@ -218,10 +256,37 @@ class OctoStreamControlPlugin(
 
       try:
         self.record_stream(url, dir_path, ffmpeg_cmd, filepath, stream_name)
+        successful_starts += 1
       except Exception as e:
         self._logger.error(f"Failed to start recording for stream '{stream_name}': {e}")
 
+    # Send notification about recording status
+    if successful_starts > 0:
+      if successful_starts == enabled_streams:
+        self.send_notification(f"Started recording {successful_starts} stream(s)", "success")
+      else:
+        self.send_notification(f"Started recording {successful_starts} of {enabled_streams} streams", "warning")
+
+      # Broadcast state change
+      self._plugin_manager.send_plugin_message(self._identifier, dict(
+        type="recording_state",
+        recording=True,
+        active_streams=successful_starts
+      ))
+      return True
+    else:
+      self.send_notification("Failed to start recording any streams", "error")
+      return False
+
   def stop_recording(self):
+    if not self.is_recording():
+      self._logger.warning("No recording in progress")
+      self.send_notification("No recording in progress", "warning")
+      return False
+
+    stopped_count = 0
+    total_active = self.get_active_stream_count()
+
     if hasattr(self, "_recordings"):
       for recording in self._recordings:
         try:
@@ -240,6 +305,7 @@ class OctoStreamControlPlugin(
               # Wait longer for FFmpeg to finalize the video file properly
               process.wait(timeout=30)
               self._logger.info(f"Stopped recording for stream '{stream_name}' gracefully")
+              stopped_count += 1
 
             except subprocess.TimeoutExpired:
               # If still running after 30 seconds, send SIGINT (Ctrl+C equivalent)
@@ -249,11 +315,13 @@ class OctoStreamControlPlugin(
                   self._logger.info(f"Sent SIGINT to recording process for stream '{stream_name}'")
                   process.wait(timeout=10)
                   self._logger.info(f"Stopped recording for stream '{stream_name}' with SIGINT")
+                  stopped_count += 1
               except (subprocess.TimeoutExpired, ProcessLookupError):
                 # Last resort - force kill
                 try:
                   process.kill()
                   self._logger.warning(f"Force killed recording process for stream '{stream_name}' as last resort")
+                  stopped_count += 1
                 except ProcessLookupError:
                   # Process already dead
                   pass
@@ -273,6 +341,25 @@ class OctoStreamControlPlugin(
     if hasattr(self, "_rec") and self._rec.poll() is None:
       self._rec.terminate()
       self._logger.info("Stopped legacy recording")
+      stopped_count += 1
+
+    # Send notification about stop status
+    if stopped_count > 0:
+      if stopped_count == total_active:
+        self.send_notification(f"Stopped recording {stopped_count} stream(s)", "success")
+      else:
+        self.send_notification(f"Stopped {stopped_count} of {total_active} streams", "warning")
+    else:
+      self.send_notification("No active recordings to stop", "info")
+
+    # Broadcast state change
+    self._plugin_manager.send_plugin_message(self._identifier, dict(
+      type="recording_state",
+      recording=False,
+      active_streams=0
+    ))
+
+    return stopped_count > 0
 
 __plugin_name__ = "OctoStream Control"
 __plugin_pythoncompat__ = ">=3,<4"
