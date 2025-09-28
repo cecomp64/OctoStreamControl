@@ -12,11 +12,11 @@ $(function() {
         self.settingsViewModel = parameters[0];  // Correct naming
         
         self.startRecording = function() {
-            OctoPrint.simpleApiCommand("octostreamcontrol", { action: "start" });
+            OctoPrint.simpleApiCommand("octostreamcontrol", "start");
         };
-        
+
         self.stopRecording = function() {
-            OctoPrint.simpleApiCommand("octostreamcontrol", { action: "stop" });
+            OctoPrint.simpleApiCommand("octostreamcontrol", "stop");
         };
         
         self.onBeforeBinding = function() {
