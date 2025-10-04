@@ -48,7 +48,7 @@ class OctoStreamControlPlugin(
           "webrtc_url": "http://localhost:8889/mystream",
           "rtsp_url": "rtsp://localhost:8554/mystream",
           "video_dir": "/home/pi/videos",
-          "ffmpeg_cmd": "ffmpeg -i INPUT_URL -c:v libx264 -preset veryfast -crf 25 -g 30 -bf 0 -c:a aac -b:a 128k -movflags +frag_keyframe+empty_moov+faststart",
+          "ffmpeg_cmd": "ffmpeg -i INPUT_URL -t 0 -c:v libx264 -preset veryfast -crf 25 -g 30 -bf 0 -c:a aac -b:a 128k -movflags +frag_keyframe+empty_moov+faststart",
           "width": "640",
           "height": "360",
           "enabled": True
