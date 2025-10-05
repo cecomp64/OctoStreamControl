@@ -86,7 +86,7 @@ class OctoStreamControlPlugin(
 
   ##--- EventHandlerPlugin ---##
   def on_event(self, event, payload):
-    self._logger.info(f"Received event: {event} with payload: {payload}")
+    #self._logger.info(f"Received event: {event} with payload: {payload}")
 
     if event == "PrintStarted":
       self._logger.info("Print started - beginning recording")
