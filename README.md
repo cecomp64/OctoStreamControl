@@ -85,6 +85,8 @@ Figure out what video sources are available using this command:
  v4l2-ctl --list-devices
 ```
 
+*You may find that USB devices switch their video source across reboots.  If a camera isn't connecting, check the video source in your command*
+
 # Development Notes
 
 To push updates once installed:
