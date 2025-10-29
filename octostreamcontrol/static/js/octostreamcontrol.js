@@ -93,6 +93,9 @@ $(function() {
             console.log("In onBeforeBinding of OctoStreamControlViewModel");
             self.settings = self.settingsViewModel.settings.plugins.octostreamcontrol;
 
+            console.log("Settings object:", self.settings);
+            console.log("YouTube settings:", self.settings.youtube);
+
             // Check initial recording status
             self.checkRecordingStatus();
 
