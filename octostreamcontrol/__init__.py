@@ -126,7 +126,13 @@ class OctoStreamControlPlugin(
 
   ##--- SimpleApiPlugin ---##
   def get_api_commands(self):
-    return {"start": [], "stop": [], "status": [], "authorize_youtube": []}
+    return {
+      "start": [],
+      "stop": [],
+      "status": [],
+      "authorize_youtube": [],
+      "complete_youtube_auth": ["state", "code"]
+    }
 
   def on_api_command(self, command, data):
     import flask
@@ -140,6 +146,10 @@ class OctoStreamControlPlugin(
       return flask.jsonify(dict(recording=self.is_recording(), active_streams=self.get_active_stream_count()))
     elif command == "authorize_youtube":
       return self.start_youtube_authorization()
+    elif command == "complete_youtube_auth":
+      state = data.get("state")
+      code = data.get("code")
+      return self.complete_youtube_authorization(state, code)
 
   def is_recording(self):
     """Check if any streams are currently recording"""
@@ -251,12 +261,12 @@ class OctoStreamControlPlugin(
 
   def start_youtube_authorization(self):
     """
-    Start the YouTube OAuth2 authorization flow for Desktop App.
-    Returns Flask response with authorization URL or error.
+    Start the YouTube OAuth2 authorization flow - generates auth URL for user.
+    Returns Flask response with authorization URL for the user to visit.
     """
     import flask
     try:
-      from google_auth_oauthlib.flow import InstalledAppFlow
+      from google_auth_oauthlib.flow import Flow
 
       youtube_settings = self._settings.get(["youtube"])
       client_secrets = youtube_settings.get("client_secrets_file")
@@ -272,42 +282,32 @@ class OctoStreamControlPlugin(
         self._logger.error(error_msg)
         return flask.jsonify(dict(success=False, error=error_msg))
 
-      # Create OAuth flow for Desktop App
-      flow = InstalledAppFlow.from_client_secrets_file(
+      # Create OAuth flow for web-based authorization
+      flow = Flow.from_client_secrets_file(
         client_secrets,
-        scopes=['https://www.googleapis.com/auth/youtube.upload']
+        scopes=['https://www.googleapis.com/auth/youtube.upload'],
+        redirect_uri='urn:ietf:wg:oauth:2.0:oob'  # Out-of-band flow for manual code entry
       )
 
-      # Run the local server flow (opens browser automatically)
-      self._logger.info("Starting YouTube authorization flow...")
+      # Generate authorization URL
+      auth_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent'
+      )
 
-      def _complete_auth():
-        try:
-          import pickle
-          # Run authorization flow - this will start a local server and open browser
-          creds = flow.run_local_server(port=8080, prompt='consent', open_browser=True)
+      # Store flow state for later use
+      if not hasattr(self, '_youtube_auth_flows'):
+        self._youtube_auth_flows = {}
+      self._youtube_auth_flows[state] = {'flow': flow, 'creds_file': creds_file}
 
-          # Save credentials
-          os.makedirs(os.path.dirname(creds_file), exist_ok=True)
-          with open(creds_file, 'wb') as token:
-            pickle.dump(creds, token)
-
-          self._logger.info(f"Successfully authorized and saved credentials to {creds_file}")
-          self.send_notification("YouTube authorization successful!", "success")
-
-        except Exception as e:
-          self._logger.error(f"Authorization failed: {e}")
-          self.send_notification(f"YouTube authorization failed: {str(e)}", "error")
-
-      # Run authorization in background thread
-      import threading
-      auth_thread = threading.Thread(target=_complete_auth, name="YouTubeAuth")
-      auth_thread.daemon = True
-      auth_thread.start()
+      self._logger.info(f"Generated YouTube authorization URL")
 
       return flask.jsonify(dict(
         success=True,
-        message="Authorization flow started. A browser window should open. Please authorize the application."
+        auth_url=auth_url,
+        state=state,
+        message="Please visit the authorization URL and enter the code you receive."
       ))
 
     except ImportError as e:
@@ -317,6 +317,47 @@ class OctoStreamControlPlugin(
     except Exception as e:
       error_msg = f"Failed to start authorization: {e}"
       self._logger.error(error_msg)
+      return flask.jsonify(dict(success=False, error=error_msg))
+
+  def complete_youtube_authorization(self, state, code):
+    """
+    Complete the YouTube OAuth2 authorization flow with the code from user.
+    """
+    import flask
+    try:
+      import pickle
+
+      # Retrieve the flow we created earlier
+      if not hasattr(self, '_youtube_auth_flows') or state not in self._youtube_auth_flows:
+        error_msg = "Authorization session not found. Please start over."
+        self._logger.error(error_msg)
+        return flask.jsonify(dict(success=False, error=error_msg))
+
+      flow_data = self._youtube_auth_flows[state]
+      flow = flow_data['flow']
+      creds_file = flow_data['creds_file']
+
+      # Exchange the authorization code for credentials
+      flow.fetch_token(code=code)
+      creds = flow.credentials
+
+      # Save credentials
+      os.makedirs(os.path.dirname(creds_file), exist_ok=True)
+      with open(creds_file, 'wb') as token:
+        pickle.dump(creds, token)
+
+      # Clean up the stored flow
+      del self._youtube_auth_flows[state]
+
+      self._logger.info(f"Successfully authorized and saved credentials to {creds_file}")
+      self.send_notification("YouTube authorization successful!", "success")
+
+      return flask.jsonify(dict(success=True, message="Authorization complete!"))
+
+    except Exception as e:
+      error_msg = f"Failed to complete authorization: {e}"
+      self._logger.error(error_msg)
+      self.send_notification(f"YouTube authorization failed: {str(e)}", "error")
       return flask.jsonify(dict(success=False, error=error_msg))
 
   def get_youtube_credentials(self):

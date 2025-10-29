@@ -158,13 +158,52 @@ $(function() {
                 OctoPrint.simpleApiCommand("octostreamcontrol", "authorize_youtube")
                     .done(function(response) {
                         console.log("YouTube authorization response:", response);
-                        if (response.success) {
-                            new PNotify({
-                                title: "YouTube Authorization",
-                                text: response.message || "Please check your browser to complete authorization.",
-                                type: "success",
-                                hide: false
-                            });
+                        if (response.success && response.auth_url) {
+                            // Open the authorization URL in a new window
+                            window.open(response.auth_url, '_blank');
+
+                            // Prompt user to enter the code they receive
+                            var code = prompt(
+                                "A Google authorization page has been opened in a new window.\n\n" +
+                                "After authorizing, Google will show you a code.\n" +
+                                "Please copy and paste that code here:"
+                            );
+
+                            if (code) {
+                                // Send the code back to complete authorization
+                                OctoPrint.simpleApiCommand("octostreamcontrol", "complete_youtube_auth", {
+                                    state: response.state,
+                                    code: code.trim()
+                                }).done(function(completeResponse) {
+                                    if (completeResponse.success) {
+                                        new PNotify({
+                                            title: "YouTube Authorization",
+                                            text: "Authorization successful!",
+                                            type: "success",
+                                            hide: false
+                                        });
+                                    } else {
+                                        new PNotify({
+                                            title: "Authorization Error",
+                                            text: completeResponse.error || "Failed to complete authorization",
+                                            type: "error",
+                                            hide: false
+                                        });
+                                    }
+                                }).fail(function() {
+                                    new PNotify({
+                                        title: "Authorization Error",
+                                        text: "Failed to complete authorization - communication error",
+                                        type: "error"
+                                    });
+                                });
+                            } else {
+                                new PNotify({
+                                    title: "Authorization Cancelled",
+                                    text: "You can try again when ready.",
+                                    type: "info"
+                                });
+                            }
                         } else {
                             new PNotify({
                                 title: "Authorization Error",
