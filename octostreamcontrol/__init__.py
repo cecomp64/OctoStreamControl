@@ -204,6 +204,22 @@ class OctoStreamControlPlugin(
       raise
 
 
+  def check_disk_space(self, path, min_free_percent=20):
+    """
+    Check if there's sufficient disk space available.
+    Returns (has_space, free_percent) tuple.
+    """
+    try:
+      import shutil
+      stat = shutil.disk_usage(path)
+      free_percent = (stat.free / stat.total) * 100
+      has_space = free_percent >= min_free_percent
+      return has_space, free_percent
+    except Exception as e:
+      self._logger.error(f"Failed to check disk space for {path}: {e}")
+      # Return True to avoid blocking on error, but log the issue
+      return True, 0
+
   ##--- Recording logic ---##
   def start_recording(self):
     streams = self._settings.get(["streams"])
@@ -217,6 +233,26 @@ class OctoStreamControlPlugin(
       self._logger.warning("Recording already in progress")
       self.send_notification("Recording already in progress", "warning")
       return False
+
+    # Check disk space for all enabled streams before starting any recordings
+    for i, stream in enumerate(streams):
+      if not stream.get("enabled", True):
+        continue
+
+      dir_path = stream.get("video_dir")
+      stream_name = stream.get("name", f"stream_{i}")
+
+      if not dir_path:
+        continue
+
+      has_space, free_percent = self.check_disk_space(dir_path, min_free_percent=20)
+      if not has_space:
+        error_msg = f"Insufficient disk space for '{stream_name}' ({free_percent:.1f}% free, need at least 20%)"
+        self._logger.error(error_msg)
+        self.send_notification(error_msg, "error")
+        return False
+      else:
+        self._logger.info(f"Disk space check passed for '{stream_name}': {free_percent:.1f}% free")
 
     job_name = self._printer.get_current_job()['file']['name']
     if not job_name:
