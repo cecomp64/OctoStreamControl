@@ -154,11 +154,13 @@ class OctoStreamControlPlugin(
 
     try:
       # Start FFmpeg with lower priority to avoid interfering with OctoPrint
+      # Use start_new_session=True to detach from parent process lifecycle
       process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True,
+        start_new_session=True,  # Detach from parent - prevents premature termination
         preexec_fn=lambda: os.nice(10)  # Lower priority (higher nice value)
       )
 
