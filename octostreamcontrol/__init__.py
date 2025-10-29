@@ -335,38 +335,75 @@ class OctoStreamControlPlugin(
     try:
       import pickle
 
+      self._logger.info(f"Attempting to complete YouTube authorization with state: {state}")
+
       # Retrieve the flow we created earlier
-      if not hasattr(self, '_youtube_auth_flows') or state not in self._youtube_auth_flows:
-        error_msg = "Authorization session not found. Please start over."
+      if not hasattr(self, '_youtube_auth_flows'):
+        error_msg = "Authorization flows not initialized. Please start over."
         self._logger.error(error_msg)
         return flask.jsonify(dict(success=False, error=error_msg))
+
+      if state not in self._youtube_auth_flows:
+        error_msg = f"Authorization session not found for state: {state}. Available states: {list(self._youtube_auth_flows.keys())}"
+        self._logger.error(error_msg)
+        return flask.jsonify(dict(success=False, error="Authorization session not found. Please start over."))
 
       flow_data = self._youtube_auth_flows[state]
       flow = flow_data['flow']
       creds_file = flow_data['creds_file']
 
+      self._logger.info(f"Exchanging authorization code for credentials...")
+
       # Exchange the authorization code for credentials
-      flow.fetch_token(code=code)
+      try:
+        flow.fetch_token(code=code)
+      except Exception as e:
+        error_msg = f"Failed to exchange code for token: {e}"
+        self._logger.error(error_msg)
+        return flask.jsonify(dict(success=False, error=f"Invalid authorization code: {str(e)}"))
+
       creds = flow.credentials
+      self._logger.info(f"Successfully obtained credentials, saving to {creds_file}")
 
       # Save credentials
-      os.makedirs(os.path.dirname(creds_file), exist_ok=True)
-      with open(creds_file, 'wb') as token:
-        pickle.dump(creds, token)
+      try:
+        creds_dir = os.path.dirname(creds_file)
+        if creds_dir and not os.path.exists(creds_dir):
+          os.makedirs(creds_dir, exist_ok=True)
+          self._logger.info(f"Created directory: {creds_dir}")
+
+        with open(creds_file, 'wb') as token:
+          pickle.dump(creds, token)
+
+        self._logger.info(f"Successfully saved credentials to {creds_file}")
+
+        # Verify the file was written
+        if os.path.exists(creds_file):
+          file_size = os.path.getsize(creds_file)
+          self._logger.info(f"Credentials file exists, size: {file_size} bytes")
+        else:
+          self._logger.error(f"Credentials file does not exist after write: {creds_file}")
+
+      except Exception as e:
+        error_msg = f"Failed to save credentials file: {e}"
+        self._logger.error(error_msg)
+        return flask.jsonify(dict(success=False, error=error_msg))
 
       # Clean up the stored flow
       del self._youtube_auth_flows[state]
 
-      self._logger.info(f"Successfully authorized and saved credentials to {creds_file}")
+      self._logger.info(f"Successfully authorized and saved credentials")
       self.send_notification("YouTube authorization successful!", "success")
 
       return flask.jsonify(dict(success=True, message="Authorization complete!"))
 
     except Exception as e:
+      import traceback
       error_msg = f"Failed to complete authorization: {e}"
       self._logger.error(error_msg)
+      self._logger.error(traceback.format_exc())
       self.send_notification(f"YouTube authorization failed: {str(e)}", "error")
-      return flask.jsonify(dict(success=False, error=error_msg))
+      return flask.jsonify(dict(success=False, error=str(e)))
 
   def get_youtube_credentials(self):
     """
