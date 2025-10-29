@@ -96,6 +96,20 @@ $(function() {
             console.log("Settings object:", self.settings);
             console.log("YouTube settings:", self.settings.youtube);
 
+            // Ensure all existing streams have the upload_to_youtube property
+            if (self.settings.streams) {
+                var streams = self.settings.streams();
+                if (streams && Array.isArray(streams)) {
+                    streams.forEach(function(stream) {
+                        if (stream.upload_to_youtube === undefined) {
+                            stream.upload_to_youtube = false;
+                        }
+                    });
+                    // Trigger update to ensure observables are created
+                    self.settings.streams(streams);
+                }
+            }
+
             // Check initial recording status
             self.checkRecordingStatus();
 
