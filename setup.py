@@ -10,7 +10,12 @@ plugin_author = "Carl Svensson"
 plugin_author_email = "csvenss2@gmail.com"
 plugin_url = "https://github.com/cecomp64/OctoStreamControl"
 plugin_license = "AGPL-3.0-or-later"
-plugin_requires = []
+plugin_requires = [
+    "google-auth>=2.0.0",
+    "google-auth-oauthlib>=0.5.0",
+    "google-auth-httplib2>=0.1.0",
+    "google-api-python-client>=2.0.0"
+]
 
 setup(
     name=plugin_name,

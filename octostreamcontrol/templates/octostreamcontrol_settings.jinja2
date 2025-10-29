@@ -62,6 +62,12 @@ This file assumes that settings_plugin_octostreamcontrol is bound to OctoStreamC
         </td>
       </tr>
       <tr>
+        <th>Upload to YouTube</th>
+        <td>
+          <input type="checkbox" data-bind="checked: upload_to_youtube" />
+        </td>
+      </tr>
+      <tr>
         <td colspan="2">
           <button data-bind="click: $parent.removeStream">Remove</button>
         </td>
@@ -70,7 +76,75 @@ This file assumes that settings_plugin_octostreamcontrol is bound to OctoStreamC
   </div>
   
   <button data-bind="click: addStream">Add Stream</button><br/>
-  
+
+  <h4>YouTube Upload Settings</h4>
+  <p>Configure global YouTube upload settings. Each stream can be individually enabled for upload.</p>
+
+  <table class="youtube-settings">
+    <tr>
+      <th>Enable YouTube Uploads</th>
+      <td>
+        <input type="checkbox" data-bind="checked: settings.youtube.enabled" />
+      </td>
+    </tr>
+    <tr>
+      <th>Client Secrets File</th>
+      <td>
+        <input type="text" data-bind="value: settings.youtube.client_secrets_file" placeholder="/path/to/client_secrets.json" style="width: 100%;" />
+      </td>
+    </tr>
+    <tr>
+      <th>Credentials File</th>
+      <td>
+        <input type="text" data-bind="value: settings.youtube.credentials_file" placeholder="/path/to/credentials.pickle" style="width: 100%;" />
+      </td>
+    </tr>
+    <tr>
+      <th>Default Video Title</th>
+      <td>
+        <input type="text" data-bind="value: settings.youtube.default_title" placeholder="3D Print Timelapse - {job_name}" style="width: 100%;" />
+      </td>
+    </tr>
+    <tr>
+      <th>Default Description</th>
+      <td>
+        <textarea data-bind="value: settings.youtube.default_description" placeholder="3D print recorded on {date}" style="width: 100%; height: 60px;"></textarea>
+      </td>
+    </tr>
+    <tr>
+      <th>Default Category ID</th>
+      <td>
+        <input type="text" data-bind="value: settings.youtube.default_category" placeholder="22" />
+      </td>
+    </tr>
+    <tr>
+      <th>Default Privacy</th>
+      <td>
+        <select data-bind="value: settings.youtube.default_privacy">
+          <option value="public">Public</option>
+          <option value="unlisted">Unlisted</option>
+          <option value="private">Private</option>
+        </select>
+      </td>
+    </tr>
+    <tr>
+      <th>Default Tags (comma-separated)</th>
+      <td>
+        <input type="text" data-bind="value: settings.youtube.default_tags" placeholder="3d printing, timelapse, octoprint" style="width: 100%;" />
+      </td>
+    </tr>
+    <tr>
+      <th>Authorization</th>
+      <td>
+        <button class="btn btn-primary" data-bind="click: authorizeYouTube">
+          <i class="fa fa-key"></i> Authorize YouTube
+        </button>
+        <br/>
+        <small>Click to start OAuth authorization flow. A browser window will open.</small>
+      </td>
+    </tr>
+  </table>
+
   <div class="stream-settings-info">
     <label for="stream_url">Stream URL</label>
     <small>
@@ -112,8 +186,26 @@ This file assumes that settings_plugin_octostreamcontrol is bound to OctoStreamC
   <div class="stream-settings-info">
     <label for="resolution">Resolution (Width, Height)</label>
     <small>
-      The resolution for the video stream. 
+      The resolution for the video stream.
       Ensure that this matches the capabilities of your camera and stream.
+    </small>
+  </div>
+
+  <div class="stream-settings-info">
+    <label for="youtube_settings">YouTube Upload Settings</label>
+    <small>
+      To enable YouTube uploads, you need to:
+      <ol>
+        <li>Create a Google Cloud project and enable the YouTube Data API v3</li>
+        <li>Create OAuth 2.0 credentials (Desktop app type) and download the client secrets JSON file</li>
+        <li>Set the path to your client secrets file in "Client Secrets File"</li>
+        <li>Set the path where credentials will be saved in "Credentials File"</li>
+        <li>Run the OAuth flow once to authorize (see plugin documentation)</li>
+        <li>Enable YouTube uploads globally, then enable per-stream in each stream's settings</li>
+      </ol>
+      Available template variables for title/description: <code>{job_name}</code>, <code>{stream_name}</code>, <code>{date}</code>
+      <br/>
+      Category IDs: 22=People & Blogs, 28=Science & Technology, 24=Entertainment, etc.
     </small>
   </div>
 </div>

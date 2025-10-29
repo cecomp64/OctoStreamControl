@@ -6,6 +6,8 @@ from octoprint.plugin import (
 )
 from datetime import datetime
 import shlex
+import threading
+import json
 
 class OctoStreamControlPlugin(
     StartupPlugin,
@@ -51,9 +53,20 @@ class OctoStreamControlPlugin(
           "ffmpeg_cmd": "ffmpeg -i INPUT_URL -t 0 -c:v libx264 -preset veryfast -crf 25 -g 30 -bf 0 -c:a aac -b:a 128k -movflags +frag_keyframe+empty_moov+faststart",
           "width": "640",
           "height": "360",
-          "enabled": True
+          "enabled": True,
+          "upload_to_youtube": False
         }
-      ]
+      ],
+      "youtube": {
+        "enabled": False,
+        "client_secrets_file": "",
+        "credentials_file": "",
+        "default_title": "3D Print Timelapse - {job_name}",
+        "default_description": "3D print recorded on {date}",
+        "default_category": "22",  # People & Blogs
+        "default_privacy": "unlisted",  # public, unlisted, or private
+        "default_tags": ["3d printing", "timelapse", "octoprint"]
+      }
     }
 
     ## this injects these vars into your tab template
@@ -99,7 +112,7 @@ class OctoStreamControlPlugin(
 
   ##--- SimpleApiPlugin ---##
   def get_api_commands(self):
-    return {"start": [], "stop": [], "status": []}
+    return {"start": [], "stop": [], "status": [], "authorize_youtube": []}
 
   def on_api_command(self, command, data):
     import flask
@@ -111,6 +124,8 @@ class OctoStreamControlPlugin(
       return flask.jsonify(dict(success=success, recording=self.is_recording()))
     elif command == "status":
       return flask.jsonify(dict(recording=self.is_recording(), active_streams=self.get_active_stream_count()))
+    elif command == "authorize_youtube":
+      return self.start_youtube_authorization()
 
   def is_recording(self):
     """Check if any streams are currently recording"""
@@ -220,6 +235,240 @@ class OctoStreamControlPlugin(
       # Return True to avoid blocking on error, but log the issue
       return True, 0
 
+  def start_youtube_authorization(self):
+    """
+    Start the YouTube OAuth2 authorization flow for Desktop App.
+    Returns Flask response with authorization URL or error.
+    """
+    import flask
+    try:
+      from google_auth_oauthlib.flow import InstalledAppFlow
+
+      youtube_settings = self._settings.get(["youtube"])
+      client_secrets = youtube_settings.get("client_secrets_file")
+      creds_file = youtube_settings.get("credentials_file")
+
+      if not client_secrets or not os.path.exists(client_secrets):
+        error_msg = f"Client secrets file not found: {client_secrets}"
+        self._logger.error(error_msg)
+        return flask.jsonify(dict(success=False, error=error_msg))
+
+      if not creds_file:
+        error_msg = "Credentials file path not configured"
+        self._logger.error(error_msg)
+        return flask.jsonify(dict(success=False, error=error_msg))
+
+      # Create OAuth flow for Desktop App
+      flow = InstalledAppFlow.from_client_secrets_file(
+        client_secrets,
+        scopes=['https://www.googleapis.com/auth/youtube.upload']
+      )
+
+      # Run the local server flow (opens browser automatically)
+      self._logger.info("Starting YouTube authorization flow...")
+
+      def _complete_auth():
+        try:
+          import pickle
+          # Run authorization flow - this will start a local server and open browser
+          creds = flow.run_local_server(port=8080, prompt='consent', open_browser=True)
+
+          # Save credentials
+          os.makedirs(os.path.dirname(creds_file), exist_ok=True)
+          with open(creds_file, 'wb') as token:
+            pickle.dump(creds, token)
+
+          self._logger.info(f"Successfully authorized and saved credentials to {creds_file}")
+          self.send_notification("YouTube authorization successful!", "success")
+
+        except Exception as e:
+          self._logger.error(f"Authorization failed: {e}")
+          self.send_notification(f"YouTube authorization failed: {str(e)}", "error")
+
+      # Run authorization in background thread
+      import threading
+      auth_thread = threading.Thread(target=_complete_auth, name="YouTubeAuth")
+      auth_thread.daemon = True
+      auth_thread.start()
+
+      return flask.jsonify(dict(
+        success=True,
+        message="Authorization flow started. A browser window should open. Please authorize the application."
+      ))
+
+    except ImportError as e:
+      error_msg = f"YouTube API libraries not installed: {e}"
+      self._logger.error(error_msg)
+      return flask.jsonify(dict(success=False, error=error_msg))
+    except Exception as e:
+      error_msg = f"Failed to start authorization: {e}"
+      self._logger.error(error_msg)
+      return flask.jsonify(dict(success=False, error=error_msg))
+
+  def get_youtube_credentials(self):
+    """
+    Get YouTube API credentials using OAuth2.
+    Returns authenticated credentials object or None if not configured.
+    """
+    try:
+      from google.oauth2.credentials import Credentials
+      from google_auth_oauthlib.flow import InstalledAppFlow
+      from google.auth.transport.requests import Request
+      import pickle
+
+      youtube_settings = self._settings.get(["youtube"])
+      creds_file = youtube_settings.get("credentials_file")
+      client_secrets = youtube_settings.get("client_secrets_file")
+
+      if not client_secrets or not os.path.exists(client_secrets):
+        self._logger.error(f"Client secrets file not found: {client_secrets}")
+        return None
+
+      creds = None
+      # Load existing credentials if available
+      if creds_file and os.path.exists(creds_file):
+        try:
+          with open(creds_file, 'rb') as token:
+            creds = pickle.load(token)
+        except Exception as e:
+          self._logger.warning(f"Failed to load credentials: {e}")
+
+      # If credentials are invalid or don't exist, authenticate
+      if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+          try:
+            creds.refresh(Request())
+            self._logger.info("Refreshed YouTube credentials")
+
+            # Save refreshed credentials
+            if creds_file:
+              try:
+                os.makedirs(os.path.dirname(creds_file), exist_ok=True)
+                with open(creds_file, 'wb') as token:
+                  pickle.dump(creds, token)
+                self._logger.info(f"Saved refreshed YouTube credentials to {creds_file}")
+              except Exception as e:
+                self._logger.error(f"Failed to save refreshed credentials: {e}")
+
+          except Exception as e:
+            self._logger.error(f"Failed to refresh credentials: {e}")
+            creds = None
+
+        if not creds:
+          # Need to run OAuth flow - this requires user interaction
+          self._logger.error("YouTube credentials need to be authorized. Please click 'Authorize YouTube' button in settings.")
+          return None
+
+      return creds
+
+    except ImportError as e:
+      self._logger.error(f"YouTube API libraries not installed: {e}")
+      return None
+    except Exception as e:
+      self._logger.error(f"Failed to get YouTube credentials: {e}")
+      return None
+
+  def upload_to_youtube(self, video_path, stream_name, job_name):
+    """
+    Upload a video to YouTube using the YouTube Data API.
+    Runs in a separate thread to avoid blocking.
+    """
+    def _upload():
+      try:
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaFileUpload
+        from googleapiclient.errors import HttpError
+
+        self._logger.info(f"Starting YouTube upload for {video_path}")
+
+        # Get credentials
+        creds = self.get_youtube_credentials()
+        if not creds:
+          self._logger.error("Failed to get YouTube credentials")
+          self.send_notification(f"YouTube upload failed for {stream_name}: No credentials", "error")
+          return
+
+        # Build YouTube API client
+        youtube = build('youtube', 'v3', credentials=creds)
+
+        # Get settings
+        youtube_settings = self._settings.get(["youtube"])
+        title_template = youtube_settings.get("default_title", "3D Print Timelapse - {job_name}")
+        description_template = youtube_settings.get("default_description", "3D print recorded on {date}")
+        category = youtube_settings.get("default_category", "22")
+        privacy = youtube_settings.get("default_privacy", "unlisted")
+        tags = youtube_settings.get("default_tags", ["3d printing", "timelapse", "octoprint"])
+
+        # Format title and description
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        title = title_template.format(job_name=job_name, stream_name=stream_name, date=date_str)
+        description = description_template.format(job_name=job_name, stream_name=stream_name, date=date_str)
+
+        # Prepare upload metadata
+        body = {
+          'snippet': {
+            'title': title,
+            'description': description,
+            'tags': tags,
+            'categoryId': str(category)
+          },
+          'status': {
+            'privacyStatus': privacy,
+            'selfDeclaredMadeForKids': False
+          }
+        }
+
+        # Create media upload object
+        media = MediaFileUpload(
+          video_path,
+          mimetype='video/mp4',
+          resumable=True,
+          chunksize=1024*1024  # 1MB chunks
+        )
+
+        # Execute upload
+        self._logger.info(f"Uploading video to YouTube: {title}")
+        request = youtube.videos().insert(
+          part=','.join(body.keys()),
+          body=body,
+          media_body=media
+        )
+
+        response = None
+        while response is None:
+          status, response = request.next_chunk()
+          if status:
+            progress = int(status.progress() * 100)
+            self._logger.info(f"YouTube upload progress: {progress}%")
+
+        video_id = response.get('id')
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
+        self._logger.info(f"YouTube upload completed: {video_url}")
+        self.send_notification(f"Uploaded {stream_name} to YouTube: {video_url}", "success")
+
+        # Optionally delete local file after successful upload
+        # Uncomment if you want to auto-delete:
+        # try:
+        #   os.remove(video_path)
+        #   self._logger.info(f"Deleted local file after upload: {video_path}")
+        # except Exception as e:
+        #   self._logger.warning(f"Failed to delete local file: {e}")
+
+      except HttpError as e:
+        self._logger.error(f"YouTube API error during upload: {e}")
+        self.send_notification(f"YouTube upload failed for {stream_name}: {e.error_details}", "error")
+      except ImportError as e:
+        self._logger.error(f"YouTube API libraries not available: {e}")
+        self.send_notification(f"YouTube upload failed: Missing libraries", "error")
+      except Exception as e:
+        self._logger.error(f"Failed to upload to YouTube: {e}")
+        self.send_notification(f"YouTube upload failed for {stream_name}: {str(e)}", "error")
+
+    # Run upload in background thread
+    upload_thread = threading.Thread(target=_upload, name=f"YouTubeUpload-{stream_name}")
+    upload_thread.daemon = True
+    upload_thread.start()
+
   ##--- Recording logic ---##
   def start_recording(self):
     streams = self._settings.get(["streams"])
@@ -324,12 +573,19 @@ class OctoStreamControlPlugin(
 
     stopped_count = 0
     total_active = self.get_active_stream_count()
+    youtube_enabled = self._settings.get(["youtube", "enabled"])
+
+    # Get job name for YouTube upload
+    job_name = self._printer.get_current_job()['file']['name']
+    if not job_name:
+      job_name = "manual_recording"
 
     if hasattr(self, "_recordings"):
-      for recording in self._recordings:
+      for i, recording in enumerate(self._recordings):
         try:
           process = recording["process"]
           stream_name = recording["stream_name"]
+          filename = recording["filename"]
 
           if process.poll() is None:
             # Process is still running, send SIGTERM for graceful shutdown
@@ -344,6 +600,15 @@ class OctoStreamControlPlugin(
               process.wait(timeout=30)
               self._logger.info(f"Stopped recording for stream '{stream_name}' gracefully")
               stopped_count += 1
+
+              # Check if we should upload to YouTube
+              streams = self._settings.get(["streams"])
+              stream_config = streams[i] if i < len(streams) else {}
+              upload_enabled = stream_config.get("upload_to_youtube", False)
+
+              if youtube_enabled and upload_enabled and os.path.exists(filename):
+                self._logger.info(f"Initiating YouTube upload for {filename}")
+                self.upload_to_youtube(filename, stream_name, job_name)
 
             except subprocess.TimeoutExpired:
               # If still running after 30 seconds, send SIGINT (Ctrl+C equivalent)

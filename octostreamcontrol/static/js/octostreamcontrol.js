@@ -113,7 +113,8 @@ $(function() {
                     video_dir: "",
                     width: "640",
                     height: "480",
-                    enabled: true
+                    enabled: true,
+                    upload_to_youtube: false
                 });
                 self.settings.streams(currentStreams);
             };
@@ -126,6 +127,44 @@ $(function() {
                     currentStreams.splice(index, 1);
                     self.settings.streams(currentStreams);
                 }
+            };
+
+            self.authorizeYouTube = function() {
+                console.log("Starting YouTube authorization...");
+
+                new PNotify({
+                    title: "YouTube Authorization",
+                    text: "Starting authorization flow...",
+                    type: "info"
+                });
+
+                OctoPrint.simpleApiCommand("octostreamcontrol", "authorize_youtube")
+                    .done(function(response) {
+                        console.log("YouTube authorization response:", response);
+                        if (response.success) {
+                            new PNotify({
+                                title: "YouTube Authorization",
+                                text: response.message || "Please check your browser to complete authorization.",
+                                type: "success",
+                                hide: false
+                            });
+                        } else {
+                            new PNotify({
+                                title: "Authorization Error",
+                                text: response.error || "Failed to start authorization",
+                                type: "error",
+                                hide: false
+                            });
+                        }
+                    })
+                    .fail(function() {
+                        console.error("Failed to communicate with plugin");
+                        new PNotify({
+                            title: "Authorization Error",
+                            text: "Failed to start authorization - communication error",
+                            type: "error"
+                        });
+                    });
             };
 
             console.log(self);
