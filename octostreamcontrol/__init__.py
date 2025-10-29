@@ -256,7 +256,7 @@ class OctoStreamControlPlugin(
     """
     import flask
     try:
-      from google.auth.oauthlib.flow import InstalledAppFlow
+      from google_auth_oauthlib.flow import InstalledAppFlow
 
       youtube_settings = self._settings.get(["youtube"])
       client_secrets = youtube_settings.get("client_secrets_file")
@@ -326,7 +326,7 @@ class OctoStreamControlPlugin(
     """
     try:
       from google.oauth2.credentials import Credentials
-      from google.auth.oauthlib.flow import InstalledAppFlow
+      from google_auth_oauthlib.flow import InstalledAppFlow
       from google.auth.transport.requests import Request
       import pickle
 
