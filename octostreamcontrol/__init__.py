@@ -65,9 +65,23 @@ class OctoStreamControlPlugin(
         "default_description": "3D print recorded on {date}",
         "default_category": "22",  # People & Blogs
         "default_privacy": "unlisted",  # public, unlisted, or private
-        "default_tags": ["3d printing", "timelapse", "octoprint"]
+        "default_tags": "3d printing, timelapse, octoprint"  # Comma-separated string
       }
     }
+
+  def get_settings_version(self):
+    return 1
+
+  def on_settings_migrate(self, target, current=None):
+    if current is None:
+      # First time setup - ensure youtube section exists
+      current = 0
+
+    if current < 1:
+      # Migrate tags from array to comma-separated string if needed
+      tags = self._settings.get(["youtube", "default_tags"])
+      if isinstance(tags, list):
+        self._settings.set(["youtube", "default_tags"], ", ".join(tags))
 
     ## this injects these vars into your tab template
   def get_template_vars(self):
@@ -397,7 +411,14 @@ class OctoStreamControlPlugin(
         description_template = youtube_settings.get("default_description", "3D print recorded on {date}")
         category = youtube_settings.get("default_category", "22")
         privacy = youtube_settings.get("default_privacy", "unlisted")
-        tags = youtube_settings.get("default_tags", ["3d printing", "timelapse", "octoprint"])
+        tags_str = youtube_settings.get("default_tags", "3d printing, timelapse, octoprint")
+
+        # Parse tags from comma-separated string to list
+        if isinstance(tags_str, str):
+          tags = [tag.strip() for tag in tags_str.split(",") if tag.strip()]
+        else:
+          # Fallback if somehow it's still a list
+          tags = tags_str if isinstance(tags_str, list) else ["3d printing", "timelapse", "octoprint"]
 
         # Format title and description
         date_str = datetime.now().strftime("%Y-%m-%d")
