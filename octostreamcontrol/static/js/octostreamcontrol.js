@@ -160,50 +160,62 @@ $(function() {
                         console.log("YouTube authorization response:", response);
                         if (response.success && response.auth_url) {
                             // Open the authorization URL in a new window
-                            window.open(response.auth_url, '_blank');
+                            var authWindow = window.open(response.auth_url, '_blank', 'width=600,height=700');
 
-                            // Prompt user to enter the code they receive
-                            var code = prompt(
-                                "A Google authorization page has been opened in a new window.\n\n" +
-                                "After authorizing, Google will show you a code.\n" +
-                                "Please copy and paste that code here:"
-                            );
+                            if (!authWindow) {
+                                new PNotify({
+                                    title: "Pop-up Blocked",
+                                    text: "Please allow pop-ups and try again, or manually visit:\n" + response.auth_url,
+                                    type: "warning",
+                                    hide: false
+                                });
+                                return;
+                            }
 
-                            if (code) {
-                                // Send the code back to complete authorization
-                                OctoPrint.simpleApiCommand("octostreamcontrol", "complete_youtube_auth", {
-                                    state: response.state,
-                                    code: code.trim()
-                                }).done(function(completeResponse) {
-                                    if (completeResponse.success) {
-                                        new PNotify({
-                                            title: "YouTube Authorization",
-                                            text: "Authorization successful!",
-                                            type: "success",
-                                            hide: false
-                                        });
-                                    } else {
+                            // Give user time to see the window opened, then show prompt
+                            setTimeout(function() {
+                                var code = prompt(
+                                    "A Google authorization page has been opened in a new window.\n\n" +
+                                    "After authorizing, Google will show you a code.\n" +
+                                    "Please copy and paste that code here:"
+                                );
+
+                                if (code && code.trim()) {
+                                    // Send the code back to complete authorization
+                                    OctoPrint.simpleApiCommand("octostreamcontrol", "complete_youtube_auth", {
+                                        state: response.state,
+                                        code: code.trim()
+                                    }).done(function(completeResponse) {
+                                        if (completeResponse.success) {
+                                            new PNotify({
+                                                title: "YouTube Authorization",
+                                                text: "Authorization successful!",
+                                                type: "success",
+                                                hide: false
+                                            });
+                                        } else {
+                                            new PNotify({
+                                                title: "Authorization Error",
+                                                text: completeResponse.error || "Failed to complete authorization",
+                                                type: "error",
+                                                hide: false
+                                            });
+                                        }
+                                    }).fail(function() {
                                         new PNotify({
                                             title: "Authorization Error",
-                                            text: completeResponse.error || "Failed to complete authorization",
-                                            type: "error",
-                                            hide: false
+                                            text: "Failed to complete authorization - communication error",
+                                            type: "error"
                                         });
-                                    }
-                                }).fail(function() {
-                                    new PNotify({
-                                        title: "Authorization Error",
-                                        text: "Failed to complete authorization - communication error",
-                                        type: "error"
                                     });
-                                });
-                            } else {
-                                new PNotify({
-                                    title: "Authorization Cancelled",
-                                    text: "You can try again when ready.",
-                                    type: "info"
-                                });
-                            }
+                                } else {
+                                    new PNotify({
+                                        title: "Authorization Cancelled",
+                                        text: "You can try again when ready.",
+                                        type: "info"
+                                    });
+                                }
+                            }, 500);  // Wait 500ms before showing prompt
                         } else {
                             new PNotify({
                                 title: "Authorization Error",

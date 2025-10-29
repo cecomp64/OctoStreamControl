@@ -282,7 +282,17 @@ class OctoStreamControlPlugin(
         self._logger.error(error_msg)
         return flask.jsonify(dict(success=False, error=error_msg))
 
+      # Clear any old flow states to avoid issues with multiple authorization attempts
+      if hasattr(self, '_youtube_auth_flows'):
+        self._youtube_auth_flows.clear()
+      else:
+        self._youtube_auth_flows = {}
+
       # Create OAuth flow for web-based authorization
+      # Disable HTTPS requirement for localhost development/testing
+      import os as os_module
+      os_module.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
       flow = Flow.from_client_secrets_file(
         client_secrets,
         scopes=['https://www.googleapis.com/auth/youtube.upload'],
@@ -297,11 +307,9 @@ class OctoStreamControlPlugin(
       )
 
       # Store flow state for later use
-      if not hasattr(self, '_youtube_auth_flows'):
-        self._youtube_auth_flows = {}
       self._youtube_auth_flows[state] = {'flow': flow, 'creds_file': creds_file}
 
-      self._logger.info(f"Generated YouTube authorization URL")
+      self._logger.info(f"Generated YouTube authorization URL: {auth_url}")
 
       return flask.jsonify(dict(
         success=True,
