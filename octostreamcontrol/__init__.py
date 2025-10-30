@@ -24,6 +24,34 @@ class OctoStreamControlPlugin(
     streams = self._settings.get(["streams"])
     self._logger.info(f"Found {len(streams) if streams else 0} configured streams")
 
+    # Start monitoring thread for recording processes
+    import threading
+    self._monitoring_thread = threading.Thread(target=self._monitor_recordings, daemon=True, name="RecordingMonitor")
+    self._monitoring_thread.start()
+
+  def _monitor_recordings(self):
+    """Monitor recording processes and log when they die unexpectedly"""
+    import time
+    while True:
+      time.sleep(30)  # Check every 30 seconds
+      if hasattr(self, "_recordings") and self._recordings:
+        for recording in self._recordings[:]:  # Copy list to avoid modification during iteration
+          process = recording["process"]
+          stream_name = recording["stream_name"]
+          start_time = recording.get("start_time", 0)
+
+          if process.poll() is not None:
+            # Process has died
+            elapsed = time.time() - start_time
+            self._logger.error(f"Recording process for '{stream_name}' died after {elapsed:.1f} seconds!")
+            self._logger.error(f"Exit code: {process.returncode}")
+            self._logger.error(f"Command was: {' '.join(recording['cmd'])}")
+            # Don't remove from list here, let stop_recording handle it
+          else:
+            # Process still alive
+            elapsed = time.time() - start_time
+            self._logger.debug(f"Recording '{stream_name}' still alive after {elapsed:.1f} seconds (PID: {process.pid})")
+
   ##--- Plugin metadata (optional, but helps) ---##
   def get_update_information(self):
     return {
@@ -194,14 +222,20 @@ class OctoStreamControlPlugin(
     try:
       # Start FFmpeg with lower priority to avoid interfering with OctoPrint
       # Use start_new_session=True to detach from parent process lifecycle
+      # Redirect output to devnull to prevent buffer issues
+      devnull = open(os.devnull, 'w')
+
       process = subprocess.Popen(
         cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
+        stdout=devnull,
+        stderr=devnull,
+        stdin=subprocess.DEVNULL,
         start_new_session=True,  # Detach from parent - prevents premature termination
         preexec_fn=lambda: os.nice(10)  # Lower priority (higher nice value)
       )
+
+      # Store devnull file handle so we can close it later
+      # (though it doesn't matter much since the process is detached)
 
       # Track this recording process
       if not hasattr(self, "_recordings"):
@@ -211,10 +245,12 @@ class OctoStreamControlPlugin(
         "process": process,
         "stream_name": stream_name,
         "filename": filename,
-        "cmd": cmd
+        "cmd": cmd,
+        "start_time": time.time()
       })
 
       self._logger.info(f"Started recording stream '{stream_name}' to {filename} (PID: {process.pid})")
+      self._logger.info(f"Process is in new session: {os.getsid(process.pid) != os.getsid(os.getpid())}")
 
       # Log system resources for diagnostics
       try:
@@ -230,11 +266,9 @@ class OctoStreamControlPlugin(
       time.sleep(0.5)
       if process.poll() is not None:
         # Process already terminated
-        stdout, stderr = process.communicate()
         self._logger.error(f"FFmpeg process for '{stream_name}' terminated immediately!")
         self._logger.error(f"Exit code: {process.returncode}")
-        self._logger.error(f"STDOUT: {stdout}")
-        self._logger.error(f"STDERR: {stderr}")
+        self._logger.error(f"Check FFmpeg command and stream URL are correct")
         # Remove from recordings list since it failed
         self._recordings = [r for r in self._recordings if r["process"] != process]
 
@@ -737,10 +771,8 @@ class OctoStreamControlPlugin(
                   pass
           else:
             # Process already terminated, check why
-            stdout, stderr = process.communicate()
             self._logger.error(f"Recording for '{stream_name}' already terminated with exit code {process.returncode}")
-            if stderr:
-              self._logger.error(f"FFmpeg stderr for '{stream_name}': {stderr}")
+            self._logger.error(f"Process may have crashed or been killed externally")
 
         except Exception as e:
           self._logger.error(f"Error stopping recording for stream '{recording['stream_name']}': {e}")
