@@ -205,6 +205,8 @@ class OctoStreamControlPlugin(
     """
     Record the stream from the given URL to the specified directory using ffmpeg.
     """
+    import time
+
     # Make the directory if it doesn't exist
     if not os.path.exists(dir_path):
       os.makedirs(dir_path)
