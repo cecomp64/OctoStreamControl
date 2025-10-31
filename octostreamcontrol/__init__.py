@@ -32,9 +32,14 @@ class OctoStreamControlPlugin(
   def _monitor_recordings(self):
     """Monitor recording processes and log when they die unexpectedly"""
     import time
+    self._logger.info("Recording monitor thread started")
+
     while True:
       time.sleep(30)  # Check every 30 seconds
+
       if hasattr(self, "_recordings") and self._recordings:
+        self._logger.info(f"Monitoring {len(self._recordings)} recording(s)...")
+
         for recording in self._recordings[:]:  # Copy list to avoid modification during iteration
           process = recording["process"]
           stream_name = recording["stream_name"]
@@ -50,7 +55,10 @@ class OctoStreamControlPlugin(
           else:
             # Process still alive
             elapsed = time.time() - start_time
-            self._logger.debug(f"Recording '{stream_name}' still alive after {elapsed:.1f} seconds (PID: {process.pid})")
+            self._logger.info(f"Recording '{stream_name}' still alive after {elapsed:.1f} seconds (PID: {process.pid})")
+      else:
+        # No recordings active, just log occasionally
+        pass  # Silent when no recordings
 
   ##--- Plugin metadata (optional, but helps) ---##
   def get_update_information(self):
