@@ -30,35 +30,32 @@ class OctoStreamControlPlugin(
     self._monitoring_thread.start()
 
   def _monitor_recordings(self):
-    """Monitor recording processes and log when they die unexpectedly"""
+    """Monitor recording processes and log when they die unexpectedly during prints"""
     import time
     self._logger.info("Recording monitor thread started")
 
     while True:
       time.sleep(30)  # Check every 30 seconds
 
+      # Only monitor when we have active recordings (i.e., during prints)
       if hasattr(self, "_recordings") and self._recordings:
-        self._logger.info(f"Monitoring {len(self._recordings)} recording(s)...")
-
         for recording in self._recordings[:]:  # Copy list to avoid modification during iteration
           process = recording["process"]
           stream_name = recording["stream_name"]
           start_time = recording.get("start_time", 0)
+          elapsed = time.time() - start_time
 
           if process.poll() is not None:
-            # Process has died
-            elapsed = time.time() - start_time
+            # Process has died unexpectedly during the print
             self._logger.error(f"Recording process for '{stream_name}' died after {elapsed:.1f} seconds!")
             self._logger.error(f"Exit code: {process.returncode}")
             self._logger.error(f"Command was: {' '.join(recording['cmd'])}")
+            self.send_notification(f"Recording '{stream_name}' stopped unexpectedly!", "error")
             # Don't remove from list here, let stop_recording handle it
           else:
-            # Process still alive
-            elapsed = time.time() - start_time
-            self._logger.info(f"Recording '{stream_name}' still alive after {elapsed:.1f} seconds (PID: {process.pid})")
-      else:
-        # No recordings active, just log occasionally
-        pass  # Silent when no recordings
+            # Process still alive - log every 2 minutes to confirm it's running
+            if int(elapsed) % 120 == 0 or elapsed < 35:  # Log at start and every 2 minutes
+              self._logger.info(f"Recording '{stream_name}' alive: {elapsed:.0f}s (PID: {process.pid})")
 
   ##--- Plugin metadata (optional, but helps) ---##
   def get_update_information(self):
@@ -154,7 +151,7 @@ class OctoStreamControlPlugin(
     if event == "PrintStarted":
       self._logger.info("Print started - beginning recording")
       self.start_recording()
-    elif event in ("PrintDone", "PrintFailed", "PrintCancelled"):
+    elif event in ("PrintDone", "PrintFailed"):
       self._logger.info(f"Print ended ({event}) - stopping recording")
       self.stop_recording()
     else:
@@ -733,11 +730,11 @@ class OctoStreamControlPlugin(
 
     if hasattr(self, "_recordings"):
       for i, recording in enumerate(self._recordings):
-        try:
-          process = recording["process"]
-          stream_name = recording["stream_name"]
-          filename = recording["filename"]
+        process = recording["process"]
+        stream_name = recording["stream_name"]
+        filename = recording["filename"]
 
+        try:
           if process.poll() is None:
             # Process is still running, send SIGTERM for graceful shutdown
             import signal
@@ -751,15 +748,6 @@ class OctoStreamControlPlugin(
               process.wait(timeout=30)
               self._logger.info(f"Stopped recording for stream '{stream_name}' gracefully")
               stopped_count += 1
-
-              # Check if we should upload to YouTube
-              streams = self._settings.get(["streams"])
-              stream_config = streams[i] if i < len(streams) else {}
-              upload_enabled = stream_config.get("upload_to_youtube", False)
-
-              if youtube_enabled and upload_enabled and os.path.exists(filename):
-                self._logger.info(f"Initiating YouTube upload for {filename}")
-                self.upload_to_youtube(filename, stream_name, job_name)
 
             except subprocess.TimeoutExpired:
               # If still running after 30 seconds, send SIGINT (Ctrl+C equivalent)
@@ -785,7 +773,22 @@ class OctoStreamControlPlugin(
             self._logger.error(f"Process may have crashed or been killed externally")
 
         except Exception as e:
-          self._logger.error(f"Error stopping recording for stream '{recording['stream_name']}': {e}")
+          self._logger.error(f"Error stopping recording for stream '{stream_name}': {e}")
+
+        # Check if we should upload to YouTube - do this regardless of how stopping went
+        # As long as the file exists, try to upload it
+        try:
+          streams = self._settings.get(["streams"])
+          stream_config = streams[i] if i < len(streams) else {}
+          upload_enabled = stream_config.get("upload_to_youtube", False)
+
+          if youtube_enabled and upload_enabled and os.path.exists(filename):
+            self._logger.info(f"Initiating YouTube upload for {filename}")
+            self.upload_to_youtube(filename, stream_name, job_name)
+          elif youtube_enabled and upload_enabled and not os.path.exists(filename):
+            self._logger.warning(f"Cannot upload '{stream_name}' to YouTube: file does not exist at {filename}")
+        except Exception as e:
+          self._logger.error(f"Error checking YouTube upload for stream '{stream_name}': {e}")
 
       self._recordings = []
 
