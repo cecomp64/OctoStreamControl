@@ -162,7 +162,9 @@ class OctoStreamControlPlugin(
       "stop": [],
       "status": [],
       "authorize_youtube": [],
-      "complete_youtube_auth": ["redirect_url"]
+      "complete_youtube_auth": ["redirect_url"],
+      "list_videos": [],
+      "retry_upload": ["video_paths"]
     }
 
   def on_api_command(self, command, data):
@@ -180,6 +182,11 @@ class OctoStreamControlPlugin(
     elif command == "complete_youtube_auth":
       redirect_url = data.get("redirect_url")
       return self.complete_youtube_authorization(redirect_url)
+    elif command == "list_videos":
+      return self.list_recent_videos()
+    elif command == "retry_upload":
+      video_paths = data.get("video_paths", [])
+      return self.retry_youtube_upload(video_paths)
 
   def is_recording(self):
     """Check if any streams are currently recording"""
@@ -743,6 +750,117 @@ class OctoStreamControlPlugin(
     upload_thread = threading.Thread(target=_upload, name=f"YouTubeUpload-{stream_name}")
     upload_thread.daemon = True
     upload_thread.start()
+
+  def list_recent_videos(self):
+    """List the 10 most recent video files from all configured video directories."""
+    import flask
+    import os
+    import glob
+
+    streams = self._settings.get(["streams"])
+    if not streams:
+      return flask.jsonify({"videos": [], "error": "No streams configured"})
+
+    # Collect all video files from all stream directories
+    video_files = []
+    video_extensions = ['.mp4', '.avi', '.mkv', '.mov', '.webm']
+
+    for stream in streams:
+      video_dir = stream.get("video_dir", "")
+      if not video_dir or not os.path.exists(video_dir):
+        self._logger.warning(f"Video directory does not exist: {video_dir}")
+        continue
+
+      # Find all video files in this directory
+      for ext in video_extensions:
+        pattern = os.path.join(video_dir, f"*{ext}")
+        for video_path in glob.glob(pattern):
+          if os.path.isfile(video_path):
+            video_files.append({
+              "path": video_path,
+              "name": os.path.basename(video_path),
+              "size": os.path.getsize(video_path),
+              "modified": os.path.getmtime(video_path),
+              "stream_name": stream.get("name", "Unknown")
+            })
+
+    # Sort by modification time (newest first) and take top 10
+    video_files.sort(key=lambda x: x["modified"], reverse=True)
+    recent_videos = video_files[:10]
+
+    # Format file sizes and dates for display
+    for video in recent_videos:
+      # Convert bytes to MB
+      video["size_mb"] = round(video["size"] / (1024 * 1024), 2)
+      # Convert timestamp to readable date
+      from datetime import datetime
+      video["modified_date"] = datetime.fromtimestamp(video["modified"]).strftime("%Y-%m-%d %H:%M:%S")
+
+    return flask.jsonify({"videos": recent_videos})
+
+  def retry_youtube_upload(self, video_paths):
+    """Upload one or more selected videos to YouTube."""
+    import flask
+    import os
+
+    if not video_paths or not isinstance(video_paths, list):
+      return flask.jsonify({"success": False, "error": "No video paths provided"})
+
+    # Verify YouTube is enabled and configured
+    youtube_settings = self._settings.get(["youtube"])
+    if not youtube_settings.get("enabled"):
+      return flask.jsonify({"success": False, "error": "YouTube uploads are not enabled"})
+
+    # Validate all paths exist before starting any uploads
+    invalid_paths = []
+    for video_path in video_paths:
+      if not os.path.exists(video_path) or not os.path.isfile(video_path):
+        invalid_paths.append(video_path)
+
+    if invalid_paths:
+      return flask.jsonify({
+        "success": False,
+        "error": f"Invalid video paths: {', '.join(invalid_paths)}"
+      })
+
+    # Start uploads in background
+    def _upload_all():
+      success_count = 0
+      fail_count = 0
+
+      for video_path in video_paths:
+        try:
+          # Extract stream name from the video filename if possible
+          # Format is typically: YYYYMMDD_HHMMSS_streamname_jobname.mp4
+          basename = os.path.basename(video_path)
+          parts = basename.split('_')
+          stream_name = parts[2] if len(parts) > 2 else "Unknown"
+          job_name = '_'.join(parts[3:]).rsplit('.', 1)[0] if len(parts) > 3 else "Manual Upload"
+
+          self._logger.info(f"Retrying upload for: {video_path}")
+          self.upload_to_youtube(video_path, stream_name, job_name)
+          success_count += 1
+        except Exception as e:
+          self._logger.error(f"Failed to initiate upload for {video_path}: {e}")
+          fail_count += 1
+
+      # Send summary notification
+      if success_count > 0 and fail_count == 0:
+        self.send_notification(f"Started uploading {success_count} video(s) to YouTube", "success")
+      elif success_count > 0 and fail_count > 0:
+        self.send_notification(f"Started uploading {success_count} video(s), {fail_count} failed to start", "warning")
+      else:
+        self.send_notification(f"Failed to start any uploads", "error")
+
+    # Run in background thread
+    upload_thread = threading.Thread(target=_upload_all, name="YouTubeRetryUpload")
+    upload_thread.daemon = True
+    upload_thread.start()
+
+    return flask.jsonify({
+      "success": True,
+      "message": f"Starting upload of {len(video_paths)} video(s)"
+    })
 
   ##--- Recording logic ---##
   def start_recording(self):

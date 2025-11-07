@@ -24,6 +24,18 @@
     </style>
   </div>
 
+  <!-- YouTube Upload Controls -->
+  <div data-bind="if: settings.youtube.enabled" style="margin-bottom: 20px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f0f8ff;">
+    <h4>YouTube Upload</h4>
+    <p>Upload recorded videos to YouTube:</p>
+    <div style="margin-bottom: 10px;">
+      <button data-bind="click: retryYouTubeUpload" class="btn btn-success">
+        <i class="fa fa-upload"></i> Upload Videos to YouTube
+      </button>
+    </div>
+    <small style="color: #666;">Select from the 10 most recent videos in your video directories.</small>
+  </div>
+
   <!-- Stream display -->
   <div data-bind="foreach: streams">
     <div style="margin-bottom: 20px; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">

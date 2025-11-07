@@ -217,6 +217,152 @@ $(function() {
                     });
             };
 
+            self.retryYouTubeUpload = function() {
+                console.log("Loading videos for retry upload...");
+
+                new PNotify({
+                    title: "Loading Videos",
+                    text: "Fetching recent videos...",
+                    type: "info"
+                });
+
+                // Fetch the list of recent videos
+                OctoPrint.simpleApiCommand("octostreamcontrol", "list_videos")
+                    .done(function(response) {
+                        console.log("List videos response:", response);
+                        if (response.videos && response.videos.length > 0) {
+                            self.showVideoSelectionModal(response.videos);
+                        } else {
+                            new PNotify({
+                                title: "No Videos Found",
+                                text: response.error || "No video files found in configured directories",
+                                type: "warning",
+                                hide: false
+                            });
+                        }
+                    })
+                    .fail(function() {
+                        console.error("Failed to communicate with plugin");
+                        new PNotify({
+                            title: "Error",
+                            text: "Failed to fetch video list - communication error",
+                            type: "error"
+                        });
+                    });
+            };
+
+            self.showVideoSelectionModal = function(videos) {
+                // Create modal with video selection checkboxes
+                var videoListHtml = videos.map(function(video, index) {
+                    return '<div class="checkbox" style="margin: 10px 0;">' +
+                           '  <label style="font-weight: normal;">' +
+                           '    <input type="checkbox" class="video-checkbox" data-path="' + video.path + '" data-index="' + index + '">' +
+                           '    <strong>' + video.name + '</strong><br>' +
+                           '    <small style="margin-left: 20px;">' +
+                           '      Stream: ' + video.stream_name + ' | ' +
+                           '      Size: ' + video.size_mb + ' MB | ' +
+                           '      Modified: ' + video.modified_date +
+                           '    </small>' +
+                           '  </label>' +
+                           '</div>';
+                }).join('');
+
+                var modalHtml =
+                    '<div class="modal fade" id="youtube-retry-modal" tabindex="-1">' +
+                    '  <div class="modal-dialog modal-lg">' +
+                    '    <div class="modal-content">' +
+                    '      <div class="modal-header">' +
+                    '        <button type="button" class="close" data-dismiss="modal">&times;</button>' +
+                    '        <h4 class="modal-title">Retry YouTube Upload</h4>' +
+                    '      </div>' +
+                    '      <div class="modal-body" style="max-height: 500px; overflow-y: auto;">' +
+                    '        <p>Select one or more videos to upload to YouTube:</p>' +
+                    '        <div style="margin: 10px 0;">' +
+                    '          <button type="button" class="btn btn-sm btn-default" id="select-all-videos">Select All</button>' +
+                    '          <button type="button" class="btn btn-sm btn-default" id="deselect-all-videos">Deselect All</button>' +
+                    '        </div>' +
+                    '        <hr>' +
+                    '        <div id="video-list">' + videoListHtml + '</div>' +
+                    '      </div>' +
+                    '      <div class="modal-footer">' +
+                    '        <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>' +
+                    '        <button type="button" class="btn btn-primary" id="upload-selected-videos">Upload Selected</button>' +
+                    '      </div>' +
+                    '    </div>' +
+                    '  </div>' +
+                    '</div>';
+
+                // Remove any existing modal
+                $('#youtube-retry-modal').remove();
+
+                // Add modal to page
+                $('body').append(modalHtml);
+
+                // Show modal
+                $('#youtube-retry-modal').modal('show');
+
+                // Select/Deselect all functionality
+                $('#select-all-videos').click(function() {
+                    $('.video-checkbox').prop('checked', true);
+                });
+
+                $('#deselect-all-videos').click(function() {
+                    $('.video-checkbox').prop('checked', false);
+                });
+
+                // Handle upload button
+                $('#upload-selected-videos').click(function() {
+                    var selectedPaths = [];
+                    $('.video-checkbox:checked').each(function() {
+                        selectedPaths.push($(this).data('path'));
+                    });
+
+                    if (selectedPaths.length === 0) {
+                        new PNotify({
+                            title: "No Selection",
+                            text: "Please select at least one video to upload",
+                            type: "warning"
+                        });
+                        return;
+                    }
+
+                    // Close modal
+                    $('#youtube-retry-modal').modal('hide');
+
+                    // Send upload request
+                    new PNotify({
+                        title: "YouTube Upload",
+                        text: "Starting upload of " + selectedPaths.length + " video(s)...",
+                        type: "info"
+                    });
+
+                    OctoPrint.simpleApiCommand("octostreamcontrol", "retry_upload", {
+                        video_paths: selectedPaths
+                    }).done(function(response) {
+                        if (response.success) {
+                            new PNotify({
+                                title: "Upload Started",
+                                text: response.message || "Videos are being uploaded to YouTube",
+                                type: "success"
+                            });
+                        } else {
+                            new PNotify({
+                                title: "Upload Error",
+                                text: response.error || "Failed to start upload",
+                                type: "error",
+                                hide: false
+                            });
+                        }
+                    }).fail(function() {
+                        new PNotify({
+                            title: "Upload Error",
+                            text: "Failed to start upload - communication error",
+                            type: "error"
+                        });
+                    });
+                });
+            };
+
             self.showAuthUrlModal = function() {
                 // Create a modal dialog for non-blocking URL input
                 var modalHtml =
