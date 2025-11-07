@@ -327,7 +327,6 @@ class OctoStreamControlPlugin(
       # Create OAuth flow for web-based authorization
       # Disable HTTPS requirement for localhost development/testing
       import os as os_module
-      import pickle
       import tempfile
       os_module.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
@@ -354,10 +353,18 @@ class OctoStreamControlPlugin(
 
       # Store flow state to disk (not memory) so it persists across requests
       # The plugin instance may be recreated between authorize and complete calls
-      flow_state_file = os_module.path.join(tempfile.gettempdir(), f'octoprint_youtube_flow_{state}.pkl')
+      # We can't pickle the Flow object itself, so we store the essential data
+      flow_state_file = os_module.path.join(tempfile.gettempdir(), f'octoprint_youtube_flow_{state}.json')
       try:
-        with open(flow_state_file, 'wb') as f:
-          pickle.dump({'flow': flow, 'creds_file': creds_file}, f)
+        import json as json_module
+        flow_state_data = {
+          'state': state,
+          'client_secrets': client_secrets,
+          'creds_file': creds_file,
+          'redirect_uri': redirect_uri
+        }
+        with open(flow_state_file, 'w') as f:
+          json_module.dump(flow_state_data, f)
         self._logger.info(f"Stored OAuth flow state to: {flow_state_file}")
       except Exception as e:
         self._logger.error(f"Failed to save flow state: {e}")
@@ -425,7 +432,10 @@ class OctoStreamControlPlugin(
 
       # Retrieve the flow we stored to disk earlier
       import tempfile
-      flow_state_file = os.path.join(tempfile.gettempdir(), f'octoprint_youtube_flow_{state}.pkl')
+      import json as json_module
+      from google_auth_oauthlib.flow import Flow
+
+      flow_state_file = os.path.join(tempfile.gettempdir(), f'octoprint_youtube_flow_{state}.json')
 
       if not os.path.exists(flow_state_file):
         self._logger.error(f"Authorization state file not found: {flow_state_file}")
@@ -436,15 +446,32 @@ class OctoStreamControlPlugin(
         self._logger.info(f"Available flow files in {temp_dir}: {flow_files}")
         return flask.jsonify(dict(success=False, error=f"Authorization session expired or not found. Please start over."))
 
-      # Load the flow state from disk
+      # Load the flow state from disk and reconstruct the Flow object
       try:
-        with open(flow_state_file, 'rb') as f:
-          flow_data = pickle.load(f)
-        flow = flow_data['flow']
+        with open(flow_state_file, 'r') as f:
+          flow_data = json_module.load(f)
+
+        # Reconstruct the OAuth flow from saved data
+        client_secrets = flow_data['client_secrets']
         creds_file = flow_data['creds_file']
-        self._logger.info(f"Successfully loaded OAuth flow state from disk")
+        redirect_uri = flow_data['redirect_uri']
+
+        # Disable HTTPS requirement for localhost
+        import os as os_module
+        os_module.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
+        flow = Flow.from_client_secrets_file(
+          client_secrets,
+          scopes=['https://www.googleapis.com/auth/youtube.upload'],
+          redirect_uri=redirect_uri,
+          state=state  # Important: restore the state
+        )
+
+        self._logger.info(f"Successfully loaded and reconstructed OAuth flow from disk")
       except Exception as e:
         self._logger.error(f"Failed to load flow state from {flow_state_file}: {e}")
+        import traceback
+        self._logger.error(traceback.format_exc())
         return flask.jsonify(dict(success=False, error=f"Failed to load authorization state: {e}"))
 
       self._logger.info("Exchanging authorization code for credentials...")
