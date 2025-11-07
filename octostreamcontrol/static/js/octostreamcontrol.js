@@ -172,24 +172,33 @@ $(function() {
                                 return;
                             }
 
-                            // Give user time to see the window opened, then show prompt
+                            // Give user time to authorize, then show prompt for redirect URL
                             setTimeout(function() {
-                                var code = prompt(
+                                var redirectUrl = prompt(
                                     "A Google authorization page has been opened in a new window.\n\n" +
-                                    "After authorizing, Google will show you a code.\n" +
-                                    "Please copy and paste that code here:"
+                                    "After authorizing:\n" +
+                                    "1. Google will redirect to localhost:8181\n" +
+                                    "2. The page won't load (that's normal!)\n" +
+                                    "3. Copy the FULL URL from your browser's address bar\n" +
+                                    "   (It will look like: http://localhost:8181?code=...&state=...)\n\n" +
+                                    "Paste the redirect URL here:"
                                 );
 
-                                if (code && code.trim()) {
-                                    // Send the code back to complete authorization
+                                if (redirectUrl && redirectUrl.trim()) {
+                                    // Send the redirect URL back to complete authorization
+                                    new PNotify({
+                                        title: "YouTube Authorization",
+                                        text: "Processing authorization...",
+                                        type: "info"
+                                    });
+
                                     OctoPrint.simpleApiCommand("octostreamcontrol", "complete_youtube_auth", {
-                                        state: response.state,
-                                        code: code.trim()
+                                        redirect_url: redirectUrl.trim()
                                     }).done(function(completeResponse) {
                                         if (completeResponse.success) {
                                             new PNotify({
                                                 title: "YouTube Authorization",
-                                                text: "Authorization successful!",
+                                                text: "Authorization successful! You can now upload videos to YouTube.",
                                                 type: "success",
                                                 hide: false
                                             });
@@ -215,7 +224,7 @@ $(function() {
                                         type: "info"
                                     });
                                 }
-                            }, 500);  // Wait 500ms before showing prompt
+                            }, 1000);  // Wait 1 second before showing prompt
                         } else {
                             new PNotify({
                                 title: "Authorization Error",
