@@ -398,17 +398,25 @@ class OctoStreamControlPlugin(
         parsed = urlparse(redirect_url)
         params = parse_qs(parsed.query)
 
+        self._logger.info(f"Parsed URL components - scheme: {parsed.scheme}, netloc: {parsed.netloc}, path: {parsed.path}, query: {parsed.query}")
+        self._logger.info(f"Parsed query params: {params}")
+
         code = params.get('code', [None])[0]
         state = params.get('state', [None])[0]
         error = params.get('error', [None])[0]
+
+        self._logger.info(f"Extracted - code: {code[:20] if code else None}..., state: {state}, error: {error}")
 
         if error:
           return flask.jsonify(dict(success=False, error=f"Authorization failed: {error}"))
 
         if not code or not state:
-          return flask.jsonify(dict(success=False, error="Invalid redirect URL - missing code or state"))
+          return flask.jsonify(dict(success=False, error=f"Invalid redirect URL - missing code or state. Parsed params: {params}"))
 
       except Exception as e:
+        import traceback
+        self._logger.error(f"Failed to parse redirect URL: {e}")
+        self._logger.error(traceback.format_exc())
         return flask.jsonify(dict(success=False, error=f"Failed to parse redirect URL: {e}"))
 
       # Retrieve the flow we created earlier
