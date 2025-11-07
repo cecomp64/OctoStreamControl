@@ -1,21 +1,19 @@
 # octostreamcontrol/__init__.py
 import os, subprocess
-from octoprint.plugin import (
-  StartupPlugin, SettingsPlugin, TemplatePlugin,
-  AssetPlugin, EventHandlerPlugin, SimpleApiPlugin
-)
+import octoprint.plugin
 from datetime import datetime
 import shlex
 import threading
 import json
 
 class OctoStreamControlPlugin(
-    StartupPlugin,
-    SettingsPlugin,
-    TemplatePlugin,
-    AssetPlugin,
-    EventHandlerPlugin,
-    SimpleApiPlugin
+    octoprint.plugin.StartupPlugin,
+    octoprint.plugin.SettingsPlugin,
+    octoprint.plugin.TemplatePlugin,
+    octoprint.plugin.AssetPlugin,
+    octoprint.plugin.EventHandlerPlugin,
+    octoprint.plugin.SimpleApiPlugin,
+    octoprint.plugin.BlueprintPlugin
 ):
 
   ##--- StartupPlugin ---##
@@ -164,7 +162,7 @@ class OctoStreamControlPlugin(
       "stop": [],
       "status": [],
       "authorize_youtube": [],
-      "complete_youtube_auth": ["state", "code"]
+      "complete_youtube_auth": ["redirect_url"]
     }
 
   def on_api_command(self, command, data):
@@ -180,9 +178,8 @@ class OctoStreamControlPlugin(
     elif command == "authorize_youtube":
       return self.start_youtube_authorization()
     elif command == "complete_youtube_auth":
-      state = data.get("state")
-      code = data.get("code")
-      return self.complete_youtube_authorization(state, code)
+      redirect_url = data.get("redirect_url")
+      return self.complete_youtube_authorization(redirect_url)
 
   def is_recording(self):
     """Check if any streams are currently recording"""
@@ -205,6 +202,10 @@ class OctoStreamControlPlugin(
       message=message,
       notification_type=type
     ))
+
+  ##--- BlueprintPlugin ---##
+  # BlueprintPlugin is included but not actively used in the current implementation
+  # (kept for potential future enhancements)
 
   def record_stream(self, url, dir_path, ffmpeg_cmd, filename, stream_name="stream"):
     """
@@ -334,10 +335,17 @@ class OctoStreamControlPlugin(
       import os as os_module
       os_module.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
+      # Google doesn't allow custom hostnames like "octopi.local" as redirect URIs
+      # Instead, we'll use a localhost redirect with a high port number
+      # This creates a URL that the user can copy-paste to complete auth
+      redirect_uri = 'http://localhost:8181/'
+
+      self._logger.info(f"Using OAuth redirect URI: {redirect_uri}")
+
       flow = Flow.from_client_secrets_file(
         client_secrets,
         scopes=['https://www.googleapis.com/auth/youtube.upload'],
-        redirect_uri='urn:ietf:wg:oauth:2.0:oob'  # Out-of-band flow for manual code entry
+        redirect_uri=redirect_uri
       )
 
       # Generate authorization URL
@@ -356,7 +364,7 @@ class OctoStreamControlPlugin(
         success=True,
         auth_url=auth_url,
         state=state,
-        message="Please visit the authorization URL and enter the code you receive."
+        message="Please visit the authorization URL, grant access, and paste the redirect URL back."
       ))
 
     except ImportError as e:
@@ -368,32 +376,50 @@ class OctoStreamControlPlugin(
       self._logger.error(error_msg)
       return flask.jsonify(dict(success=False, error=error_msg))
 
-  def complete_youtube_authorization(self, state, code):
+  def complete_youtube_authorization(self, redirect_url):
     """
-    Complete the YouTube OAuth2 authorization flow with the code from user.
+    Complete YouTube OAuth2 authorization using the redirect URL from the user.
+    The user authorizes via Google, which redirects to localhost:8181/?code=...&state=...
+    The user copies that full URL and pastes it here.
     """
     import flask
     try:
       import pickle
+      from urllib.parse import urlparse, parse_qs
 
-      self._logger.info(f"Attempting to complete YouTube authorization with state: {state}")
+      if not redirect_url:
+        return flask.jsonify(dict(success=False, error="No redirect URL provided"))
+
+      self._logger.info(f"Attempting to complete YouTube authorization with redirect URL")
+
+      # Parse the redirect URL to extract code and state
+      try:
+        parsed = urlparse(redirect_url)
+        params = parse_qs(parsed.query)
+
+        code = params.get('code', [None])[0]
+        state = params.get('state', [None])[0]
+        error = params.get('error', [None])[0]
+
+        if error:
+          return flask.jsonify(dict(success=False, error=f"Authorization failed: {error}"))
+
+        if not code or not state:
+          return flask.jsonify(dict(success=False, error="Invalid redirect URL - missing code or state"))
+
+      except Exception as e:
+        return flask.jsonify(dict(success=False, error=f"Failed to parse redirect URL: {e}"))
 
       # Retrieve the flow we created earlier
-      if not hasattr(self, '_youtube_auth_flows'):
-        error_msg = "Authorization flows not initialized. Please start over."
-        self._logger.error(error_msg)
-        return flask.jsonify(dict(success=False, error=error_msg))
-
-      if state not in self._youtube_auth_flows:
-        error_msg = f"Authorization session not found for state: {state}. Available states: {list(self._youtube_auth_flows.keys())}"
-        self._logger.error(error_msg)
-        return flask.jsonify(dict(success=False, error="Authorization session not found. Please start over."))
+      if not hasattr(self, '_youtube_auth_flows') or state not in self._youtube_auth_flows:
+        self._logger.error(f"Authorization session not found for state: {state}")
+        return flask.jsonify(dict(success=False, error="Authorization session expired. Please start over."))
 
       flow_data = self._youtube_auth_flows[state]
       flow = flow_data['flow']
       creds_file = flow_data['creds_file']
 
-      self._logger.info(f"Exchanging authorization code for credentials...")
+      self._logger.info("Exchanging authorization code for credentials...")
 
       # Exchange the authorization code for credentials
       try:
@@ -433,7 +459,7 @@ class OctoStreamControlPlugin(
       # Clean up the stored flow
       del self._youtube_auth_flows[state]
 
-      self._logger.info(f"Successfully authorized and saved credentials")
+      self._logger.info("Successfully authorized and saved credentials")
       self.send_notification("YouTube authorization successful!", "success")
 
       return flask.jsonify(dict(success=True, message="Authorization complete!"))
@@ -471,6 +497,22 @@ class OctoStreamControlPlugin(
         try:
           with open(creds_file, 'rb') as token:
             creds = pickle.load(token)
+
+          # Log credential status for debugging
+          if creds:
+            self._logger.info(f"Loaded YouTube credentials from {creds_file}")
+            self._logger.info(f"Credentials valid: {creds.valid}")
+            self._logger.info(f"Credentials expired: {creds.expired}")
+            self._logger.info(f"Has refresh token: {bool(creds.refresh_token)}")
+
+            # Log expiry information if available
+            if hasattr(creds, 'expiry') and creds.expiry:
+              from datetime import datetime, timezone
+              now = datetime.now(timezone.utc)
+              time_until_expiry = creds.expiry - now
+              self._logger.info(f"Token expiry: {creds.expiry}")
+              self._logger.info(f"Time until expiry: {time_until_expiry}")
+
         except Exception as e:
           self._logger.warning(f"Failed to load credentials: {e}")
 
@@ -478,8 +520,9 @@ class OctoStreamControlPlugin(
       if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
           try:
+            self._logger.info("Attempting to refresh expired YouTube credentials...")
             creds.refresh(Request())
-            self._logger.info("Refreshed YouTube credentials")
+            self._logger.info("Successfully refreshed YouTube credentials")
 
             # Save refreshed credentials
             if creds_file:
@@ -493,6 +536,31 @@ class OctoStreamControlPlugin(
 
           except Exception as e:
             self._logger.error(f"Failed to refresh credentials: {e}")
+
+            # Check if this is the "token expired or revoked" error
+            error_str = str(e)
+            if "invalid_grant" in error_str or "expired or revoked" in error_str:
+              self._logger.error("=" * 80)
+              self._logger.error("REFRESH TOKEN EXPIRED OR REVOKED")
+              self._logger.error("This typically happens for one of these reasons:")
+              self._logger.error("1. Google OAuth consent screen is in 'Testing' mode (tokens expire after 7 days)")
+              self._logger.error("2. User revoked access through Google account settings")
+              self._logger.error("3. Token hasn't been used for 6+ months")
+              self._logger.error("")
+              self._logger.error("SOLUTION:")
+              self._logger.error("- Go to Google Cloud Console -> OAuth consent screen")
+              self._logger.error("- Change status from 'Testing' to 'Production' (or 'In Production')")
+              self._logger.error("- Then click 'Authorize YouTube' button in OctoPrint settings to re-authorize")
+              self._logger.error("=" * 80)
+
+              # Delete the invalid credentials file so we don't keep trying
+              if creds_file and os.path.exists(creds_file):
+                try:
+                  os.remove(creds_file)
+                  self._logger.info(f"Deleted invalid credentials file: {creds_file}")
+                except Exception as del_e:
+                  self._logger.warning(f"Failed to delete invalid credentials file: {del_e}")
+
             creds = None
 
         if not creds:
