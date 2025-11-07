@@ -159,29 +159,35 @@ $(function() {
                     .done(function(response) {
                         console.log("YouTube authorization response:", response);
                         if (response.success && response.auth_url) {
-                            // Open the authorization URL in a new window
-                            var authWindow = window.open(response.auth_url, '_blank', 'width=600,height=700');
+                            // Show notification with instructions
+                            new PNotify({
+                                title: "YouTube Authorization",
+                                text: "Opening Google authorization page...\n\n" +
+                                      "After authorizing:\n" +
+                                      "1. Google will redirect to localhost:8181\n" +
+                                      "2. Copy the FULL URL from your browser\n" +
+                                      "3. Click 'Complete Authorization' button below",
+                                type: "info",
+                                hide: false,
+                                buttons: {
+                                    closer: true,
+                                    sticker: false
+                                }
+                            });
 
-                            if (!authWindow) {
-                                new PNotify({
-                                    title: "Pop-up Blocked",
-                                    text: "Please allow pop-ups and try again, or manually visit:\n" + response.auth_url,
-                                    type: "warning",
-                                    hide: false
-                                });
-                                return;
-                            }
+                            // Open the authorization URL in a new tab
+                            window.open(response.auth_url, '_blank');
 
-                            // Give user time to authorize, then show prompt for redirect URL
+                            // Show a button to paste the redirect URL
+                            // We'll use another prompt but delay it so user can complete auth first
                             setTimeout(function() {
                                 var redirectUrl = prompt(
-                                    "A Google authorization page has been opened in a new window.\n\n" +
-                                    "After authorizing:\n" +
-                                    "1. Google will redirect to localhost:8181\n" +
-                                    "2. The page won't load (that's normal!)\n" +
-                                    "3. Copy the FULL URL from your browser's address bar\n" +
-                                    "   (It will look like: http://localhost:8181?code=...&state=...)\n\n" +
-                                    "Paste the redirect URL here:"
+                                    "After authorizing with Google:\n\n" +
+                                    "1. The browser redirected to localhost:8181\n" +
+                                    "2. Copy the FULL URL from your browser's address bar\n" +
+                                    "   (Example: http://localhost:8181?state=...&code=...)\n" +
+                                    "3. Paste it below:\n\n" +
+                                    "If you haven't authorized yet, click Cancel and try again when ready."
                                 );
 
                                 if (redirectUrl && redirectUrl.trim()) {
@@ -220,11 +226,11 @@ $(function() {
                                 } else {
                                     new PNotify({
                                         title: "Authorization Cancelled",
-                                        text: "You can try again when ready.",
+                                        text: "Click 'Authorize YouTube' again when ready.",
                                         type: "info"
                                     });
                                 }
-                            }, 1000);  // Wait 1 second before showing prompt
+                            }, 5000);  // Wait 5 seconds to give user time to authorize
                         } else {
                             new PNotify({
                                 title: "Authorization Error",
