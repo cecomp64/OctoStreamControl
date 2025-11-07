@@ -324,15 +324,11 @@ class OctoStreamControlPlugin(
         self._logger.error(error_msg)
         return flask.jsonify(dict(success=False, error=error_msg))
 
-      # Clear any old flow states to avoid issues with multiple authorization attempts
-      if hasattr(self, '_youtube_auth_flows'):
-        self._youtube_auth_flows.clear()
-      else:
-        self._youtube_auth_flows = {}
-
       # Create OAuth flow for web-based authorization
       # Disable HTTPS requirement for localhost development/testing
       import os as os_module
+      import pickle
+      import tempfile
       os_module.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
       # Google doesn't allow custom hostnames like "octopi.local" as redirect URIs
@@ -356,8 +352,16 @@ class OctoStreamControlPlugin(
         prompt='consent'
       )
 
-      # Store flow state for later use
-      self._youtube_auth_flows[state] = {'flow': flow, 'creds_file': creds_file}
+      # Store flow state to disk (not memory) so it persists across requests
+      # The plugin instance may be recreated between authorize and complete calls
+      flow_state_file = os_module.path.join(tempfile.gettempdir(), f'octoprint_youtube_flow_{state}.pkl')
+      try:
+        with open(flow_state_file, 'wb') as f:
+          pickle.dump({'flow': flow, 'creds_file': creds_file}, f)
+        self._logger.info(f"Stored OAuth flow state to: {flow_state_file}")
+      except Exception as e:
+        self._logger.error(f"Failed to save flow state: {e}")
+        return flask.jsonify(dict(success=False, error=f"Failed to save authorization state: {e}"))
 
       self._logger.info(f"Generated YouTube authorization URL: {auth_url}")
 
@@ -419,14 +423,29 @@ class OctoStreamControlPlugin(
         self._logger.error(traceback.format_exc())
         return flask.jsonify(dict(success=False, error=f"Failed to parse redirect URL: {e}"))
 
-      # Retrieve the flow we created earlier
-      if not hasattr(self, '_youtube_auth_flows') or state not in self._youtube_auth_flows:
-        self._logger.error(f"Authorization session not found for state: {state}")
-        return flask.jsonify(dict(success=False, error="Authorization session expired. Please start over."))
+      # Retrieve the flow we stored to disk earlier
+      import tempfile
+      flow_state_file = os.path.join(tempfile.gettempdir(), f'octoprint_youtube_flow_{state}.pkl')
 
-      flow_data = self._youtube_auth_flows[state]
-      flow = flow_data['flow']
-      creds_file = flow_data['creds_file']
+      if not os.path.exists(flow_state_file):
+        self._logger.error(f"Authorization state file not found: {flow_state_file}")
+        self._logger.error(f"This usually means the authorization took too long (>1 hour) or system was rebooted")
+        # List available flow files for debugging
+        temp_dir = tempfile.gettempdir()
+        flow_files = [f for f in os.listdir(temp_dir) if f.startswith('octoprint_youtube_flow_')]
+        self._logger.info(f"Available flow files in {temp_dir}: {flow_files}")
+        return flask.jsonify(dict(success=False, error=f"Authorization session expired or not found. Please start over."))
+
+      # Load the flow state from disk
+      try:
+        with open(flow_state_file, 'rb') as f:
+          flow_data = pickle.load(f)
+        flow = flow_data['flow']
+        creds_file = flow_data['creds_file']
+        self._logger.info(f"Successfully loaded OAuth flow state from disk")
+      except Exception as e:
+        self._logger.error(f"Failed to load flow state from {flow_state_file}: {e}")
+        return flask.jsonify(dict(success=False, error=f"Failed to load authorization state: {e}"))
 
       self._logger.info("Exchanging authorization code for credentials...")
 
@@ -465,8 +484,12 @@ class OctoStreamControlPlugin(
         self._logger.error(error_msg)
         return flask.jsonify(dict(success=False, error=error_msg))
 
-      # Clean up the stored flow
-      del self._youtube_auth_flows[state]
+      # Clean up the stored flow state file
+      try:
+        os.remove(flow_state_file)
+        self._logger.info(f"Cleaned up flow state file: {flow_state_file}")
+      except Exception as e:
+        self._logger.warning(f"Failed to delete flow state file (non-critical): {e}")
 
       self._logger.info("Successfully authorized and saved credentials")
       self.send_notification("YouTube authorization successful!", "success")
