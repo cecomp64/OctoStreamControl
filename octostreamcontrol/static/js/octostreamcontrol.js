@@ -159,78 +159,45 @@ $(function() {
                     .done(function(response) {
                         console.log("YouTube authorization response:", response);
                         if (response.success && response.auth_url) {
-                            // Show notification with instructions
+                            // Open the authorization URL in a new tab FIRST
+                            window.open(response.auth_url, '_blank');
+
+                            // Show a non-blocking custom confirmation dialog using PNotify
                             new PNotify({
                                 title: "YouTube Authorization",
-                                text: "Opening Google authorization page...\n\n" +
-                                      "After authorizing:\n" +
+                                text: "A new tab has been opened for Google authorization.\n\n" +
+                                      "After you authorize:\n" +
                                       "1. Google will redirect to localhost:8181\n" +
-                                      "2. Copy the FULL URL from your browser\n" +
-                                      "3. Click 'Complete Authorization' button below",
+                                      "2. Copy the FULL URL from your browser's address bar\n" +
+                                      "3. Click the button below to paste it",
                                 type: "info",
                                 hide: false,
+                                confirm: {
+                                    confirm: true,
+                                    buttons: [{
+                                        text: 'Complete Authorization',
+                                        addClass: 'btn-primary',
+                                        click: function(notice) {
+                                            notice.remove();
+                                            self.showAuthUrlModal();
+                                        }
+                                    }, {
+                                        text: 'Cancel',
+                                        click: function(notice) {
+                                            notice.remove();
+                                            new PNotify({
+                                                title: "Authorization Cancelled",
+                                                text: "Click 'Authorize YouTube' again when ready.",
+                                                type: "info"
+                                            });
+                                        }
+                                    }]
+                                },
                                 buttons: {
-                                    closer: true,
+                                    closer: false,
                                     sticker: false
                                 }
                             });
-
-                            // Open the authorization URL in a new tab
-                            window.open(response.auth_url, '_blank');
-
-                            // Show a button to paste the redirect URL
-                            // We'll use another prompt but delay it so user can complete auth first
-                            setTimeout(function() {
-                                var redirectUrl = prompt(
-                                    "After authorizing with Google:\n\n" +
-                                    "1. The browser redirected to localhost:8181\n" +
-                                    "2. Copy the FULL URL from your browser's address bar\n" +
-                                    "   (Example: http://localhost:8181?state=...&code=...)\n" +
-                                    "3. Paste it below:\n\n" +
-                                    "If you haven't authorized yet, click Cancel and try again when ready."
-                                );
-
-                                if (redirectUrl && redirectUrl.trim()) {
-                                    // Send the redirect URL back to complete authorization
-                                    new PNotify({
-                                        title: "YouTube Authorization",
-                                        text: "Processing authorization...",
-                                        type: "info"
-                                    });
-
-                                    OctoPrint.simpleApiCommand("octostreamcontrol", "complete_youtube_auth", {
-                                        redirect_url: redirectUrl.trim()
-                                    }).done(function(completeResponse) {
-                                        if (completeResponse.success) {
-                                            new PNotify({
-                                                title: "YouTube Authorization",
-                                                text: "Authorization successful! You can now upload videos to YouTube.",
-                                                type: "success",
-                                                hide: false
-                                            });
-                                        } else {
-                                            new PNotify({
-                                                title: "Authorization Error",
-                                                text: completeResponse.error || "Failed to complete authorization",
-                                                type: "error",
-                                                hide: false
-                                            });
-                                        }
-                                    }).fail(function() {
-                                        new PNotify({
-                                            title: "Authorization Error",
-                                            text: "Failed to complete authorization - communication error",
-                                            type: "error"
-                                        });
-                                    });
-                                } else {
-                                    new PNotify({
-                                        title: "Authorization Cancelled",
-                                        text: "Click 'Authorize YouTube' again when ready.",
-                                        type: "info"
-                                    });
-                                }
-                            }, 5000);  // Wait 5 seconds to give user time to authorize
                         } else {
                             new PNotify({
                                 title: "Authorization Error",
@@ -248,6 +215,100 @@ $(function() {
                             type: "error"
                         });
                     });
+            };
+
+            self.showAuthUrlModal = function() {
+                // Create a modal dialog for non-blocking URL input
+                var modalHtml =
+                    '<div class="modal fade" id="youtube-auth-modal" tabindex="-1">' +
+                    '  <div class="modal-dialog">' +
+                    '    <div class="modal-content">' +
+                    '      <div class="modal-header">' +
+                    '        <button type="button" class="close" data-dismiss="modal">&times;</button>' +
+                    '        <h4 class="modal-title">Complete YouTube Authorization</h4>' +
+                    '      </div>' +
+                    '      <div class="modal-body">' +
+                    '        <p>After authorizing with Google, paste the <strong>full redirect URL</strong> below:</p>' +
+                    '        <p><small>Example: <code>http://localhost:8181?state=...&code=...</code></small></p>' +
+                    '        <input type="text" class="form-control" id="youtube-redirect-url" placeholder="http://localhost:8181?state=...&code=..." style="width: 100%;">' +
+                    '      </div>' +
+                    '      <div class="modal-footer">' +
+                    '        <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>' +
+                    '        <button type="button" class="btn btn-primary" id="youtube-auth-submit">Submit</button>' +
+                    '      </div>' +
+                    '    </div>' +
+                    '  </div>' +
+                    '</div>';
+
+                // Remove any existing modal
+                $('#youtube-auth-modal').remove();
+
+                // Add modal to page
+                $('body').append(modalHtml);
+
+                // Show modal
+                $('#youtube-auth-modal').modal('show');
+
+                // Focus on input when modal is shown
+                $('#youtube-auth-modal').on('shown.bs.modal', function() {
+                    $('#youtube-redirect-url').focus();
+                });
+
+                // Handle submit button
+                $('#youtube-auth-submit').click(function() {
+                    var redirectUrl = $('#youtube-redirect-url').val().trim();
+
+                    if (redirectUrl) {
+                        // Close modal
+                        $('#youtube-auth-modal').modal('hide');
+
+                        // Send the redirect URL back to complete authorization
+                        new PNotify({
+                            title: "YouTube Authorization",
+                            text: "Processing authorization...",
+                            type: "info"
+                        });
+
+                        OctoPrint.simpleApiCommand("octostreamcontrol", "complete_youtube_auth", {
+                            redirect_url: redirectUrl
+                        }).done(function(completeResponse) {
+                            if (completeResponse.success) {
+                                new PNotify({
+                                    title: "YouTube Authorization",
+                                    text: "Authorization successful! You can now upload videos to YouTube.",
+                                    type: "success",
+                                    hide: false
+                                });
+                            } else {
+                                new PNotify({
+                                    title: "Authorization Error",
+                                    text: completeResponse.error || "Failed to complete authorization",
+                                    type: "error",
+                                    hide: false
+                                });
+                            }
+                        }).fail(function() {
+                            new PNotify({
+                                title: "Authorization Error",
+                                text: "Failed to complete authorization - communication error",
+                                type: "error"
+                            });
+                        });
+                    } else {
+                        new PNotify({
+                            title: "Invalid Input",
+                            text: "Please paste the redirect URL",
+                            type: "warning"
+                        });
+                    }
+                });
+
+                // Also allow Enter key to submit
+                $('#youtube-redirect-url').keypress(function(e) {
+                    if (e.which === 13) {
+                        $('#youtube-auth-submit').click();
+                    }
+                });
             };
 
             console.log(self);
