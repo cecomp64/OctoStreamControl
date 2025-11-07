@@ -338,7 +338,8 @@ class OctoStreamControlPlugin(
       # Google doesn't allow custom hostnames like "octopi.local" as redirect URIs
       # Instead, we'll use a localhost redirect with a high port number
       # This creates a URL that the user can copy-paste to complete auth
-      redirect_uri = 'http://localhost:8181/'
+      # Note: No trailing slash - Google is strict about exact matches
+      redirect_uri = 'http://localhost:8181'
 
       self._logger.info(f"Using OAuth redirect URI: {redirect_uri}")
 

@@ -102,7 +102,8 @@ OctoStreamControl can automatically upload recorded videos to YouTube after a pr
 1. Go to **APIs & Services** → **Credentials**
 2. Click **Create Credentials** → **OAuth client ID**
 3. Choose application type: **Web application**
-4. Under **Authorized redirect URIs**, add: `http://localhost:8181/`
+4. Under **Authorized redirect URIs**, add: `http://localhost:8181`
+   - **Important:** No trailing slash! Must be exactly `http://localhost:8181`
    - Google requires the redirect URI to be `localhost` or a public domain
    - Port `8181` is used to avoid conflicts with common services
 5. Click **Create**
@@ -140,7 +141,7 @@ OctoStreamControl can automatically upload recorded videos to YouTube after a pr
 3. Open the URL in a browser (can be on any device - phone, laptop, etc.)
 4. Sign in to your Google account if prompted
 5. Review and grant the requested permissions
-6. Google will redirect to `http://localhost:8181/?code=...&state=...`
+6. Google will redirect to `http://localhost:8181?code=...&state=...`
 7. **Copy the entire redirect URL** from your browser's address bar
 8. Paste the redirect URL into the OctoPrint plugin dialog
 9. Click **"Complete Authorization"**
@@ -155,7 +156,7 @@ Google deprecated the OOB OAuth flow in 2023. If you see this error:
 
 1. Make sure you're using the latest version of OctoStreamControl (which uses localhost redirect flow)
 2. In Google Cloud Console, verify your OAuth client is set to **Web application** type
-3. Ensure the redirect URI is configured as: `http://localhost:8181/`
+3. Ensure the redirect URI is configured as: `http://localhost:8181` (no trailing slash!)
 4. If you previously created a "Desktop app" OAuth client, create a new **Web application** client instead
 
 #### "Invalid redirect URI" or "Redirect URI mismatch" Error
@@ -164,7 +165,8 @@ This means the redirect URI in your Google Cloud OAuth client doesn't match what
 
 1. Go to Google Cloud Console → **APIs & Services** → **Credentials**
 2. Edit your OAuth 2.0 Client ID
-3. Under **Authorized redirect URIs**, ensure you have exactly: `http://localhost:8181/`
+3. Under **Authorized redirect URIs**, ensure you have exactly: `http://localhost:8181`
+   - **Must be exact - no trailing slash, no extra characters**
 4. Save changes and try authorizing again
 
 #### "Token has been expired or revoked" Error
