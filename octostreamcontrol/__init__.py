@@ -1,5 +1,5 @@
 # octostreamcontrol/__init__.py
-import os, subprocess
+import os, subprocess, signal
 import octoprint.plugin
 from datetime import datetime
 import shlex
@@ -22,8 +22,10 @@ class OctoStreamControlPlugin(
     streams = self._settings.get(["streams"])
     self._logger.info(f"Found {len(streams) if streams else 0} configured streams")
 
+    # Semaphore to serialize YouTube uploads (one at a time to avoid SD card/network overload)
+    self._youtube_upload_semaphore = threading.Semaphore(1)
+
     # Start monitoring thread for recording processes
-    import threading
     self._monitoring_thread = threading.Thread(target=self._monitor_recordings, daemon=True, name="RecordingMonitor")
     self._monitoring_thread.start()
 
@@ -575,7 +577,10 @@ class OctoStreamControlPlugin(
             if hasattr(creds, 'expiry') and creds.expiry:
               from datetime import datetime, timezone
               now = datetime.now(timezone.utc)
-              time_until_expiry = creds.expiry - now
+              expiry = creds.expiry
+              if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+              time_until_expiry = expiry - now
               self._logger.info(f"Token expiry: {creds.expiry}")
               self._logger.info(f"Time until expiry: {time_until_expiry}")
 
@@ -649,102 +654,106 @@ class OctoStreamControlPlugin(
     Runs in a separate thread to avoid blocking.
     """
     def _upload():
-      try:
-        from googleapiclient.discovery import build
-        from googleapiclient.http import MediaFileUpload
-        from googleapiclient.errors import HttpError
+      with self._youtube_upload_semaphore:
+        try:
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+          from googleapiclient.errors import HttpError
 
-        self._logger.info(f"Starting YouTube upload for {video_path}")
+          self._logger.info(f"Starting YouTube upload for {video_path}")
 
-        # Get credentials
-        creds = self.get_youtube_credentials()
-        if not creds:
-          self._logger.error("Failed to get YouTube credentials")
-          self.send_notification(f"YouTube upload failed for {stream_name}: No credentials", "error")
-          return
+          # Get credentials
+          creds = self.get_youtube_credentials()
+          if not creds:
+            self._logger.error("Failed to get YouTube credentials")
+            self.send_notification(f"YouTube upload failed for {stream_name}: No credentials", "error")
+            return
 
-        # Build YouTube API client
-        youtube = build('youtube', 'v3', credentials=creds)
+          # Build YouTube API client
+          youtube = build('youtube', 'v3', credentials=creds)
 
-        # Get settings
-        youtube_settings = self._settings.get(["youtube"])
-        title_template = youtube_settings.get("default_title", "3D Print Timelapse - {job_name}")
-        description_template = youtube_settings.get("default_description", "3D print recorded on {date}")
-        category = youtube_settings.get("default_category", "22")
-        privacy = youtube_settings.get("default_privacy", "unlisted")
-        tags_str = youtube_settings.get("default_tags", "3d printing, timelapse, octoprint")
+          # Get settings
+          youtube_settings = self._settings.get(["youtube"])
+          title_template = youtube_settings.get("default_title", "3D Print Timelapse - {job_name}")
+          description_template = youtube_settings.get("default_description", "3D print recorded on {date}")
+          category = youtube_settings.get("default_category", "22")
+          privacy = youtube_settings.get("default_privacy", "unlisted")
+          tags_str = youtube_settings.get("default_tags", "3d printing, timelapse, octoprint")
 
-        # Parse tags from comma-separated string to list
-        if isinstance(tags_str, str):
-          tags = [tag.strip() for tag in tags_str.split(",") if tag.strip()]
-        else:
-          # Fallback if somehow it's still a list
-          tags = tags_str if isinstance(tags_str, list) else ["3d printing", "timelapse", "octoprint"]
+          # Parse tags from comma-separated string to list
+          if isinstance(tags_str, str):
+            tags = [tag.strip() for tag in tags_str.split(",") if tag.strip()]
+          else:
+            # Fallback if somehow it's still a list
+            tags = tags_str if isinstance(tags_str, list) else ["3d printing", "timelapse", "octoprint"]
 
-        # Format title and description
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        title = title_template.format(job_name=job_name, stream_name=stream_name, date=date_str)
-        description = description_template.format(job_name=job_name, stream_name=stream_name, date=date_str)
+          # Format title and description
+          date_str = datetime.now().strftime("%Y-%m-%d")
+          title = title_template.format(job_name=job_name, stream_name=stream_name, date=date_str)
+          description = description_template.format(job_name=job_name, stream_name=stream_name, date=date_str)
 
-        # Prepare upload metadata
-        body = {
-          'snippet': {
-            'title': title,
-            'description': description,
-            'tags': tags,
-            'categoryId': str(category)
-          },
-          'status': {
-            'privacyStatus': privacy,
-            'selfDeclaredMadeForKids': False
+          # Prepare upload metadata
+          body = {
+            'snippet': {
+              'title': title,
+              'description': description,
+              'tags': tags,
+              'categoryId': str(category)
+            },
+            'status': {
+              'privacyStatus': privacy,
+              'selfDeclaredMadeForKids': False
+            }
           }
-        }
 
-        # Create media upload object
-        media = MediaFileUpload(
-          video_path,
-          mimetype='video/mp4',
-          resumable=True,
-          chunksize=1024*1024  # 1MB chunks
-        )
+          # Create media upload object
+          media = MediaFileUpload(
+            video_path,
+            mimetype='video/mp4',
+            resumable=True,
+            chunksize=1024*1024  # 1MB chunks
+          )
 
-        # Execute upload
-        self._logger.info(f"Uploading video to YouTube: {title}")
-        request = youtube.videos().insert(
-          part=','.join(body.keys()),
-          body=body,
-          media_body=media
-        )
+          # Execute upload
+          self._logger.info(f"Uploading video to YouTube: {title}")
+          request = youtube.videos().insert(
+            part=','.join(body.keys()),
+            body=body,
+            media_body=media
+          )
 
-        response = None
-        while response is None:
-          status, response = request.next_chunk()
-          if status:
-            progress = int(status.progress() * 100)
-            self._logger.info(f"YouTube upload progress: {progress}%")
+          response = None
+          last_logged_progress = -1
+          while response is None:
+            status, response = request.next_chunk()
+            if status:
+              progress = int(status.progress() * 100)
+              if progress >= last_logged_progress + 10:
+                self._logger.info(f"YouTube upload progress: {progress}%")
+                last_logged_progress = progress
 
-        video_id = response.get('id')
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-        self._logger.info(f"YouTube upload completed: {video_url}")
-        self.send_notification(f"Uploaded {stream_name} to YouTube: {video_url}", "success")
+          video_id = response.get('id')
+          video_url = f"https://www.youtube.com/watch?v={video_id}"
+          self._logger.info(f"YouTube upload completed: {video_url}")
+          self.send_notification(f"Uploaded {stream_name} to YouTube: {video_url}", "success")
 
-        # Optionally delete local file after successful upload
-        # Uncomment if you want to auto-delete:
-        # try:
-        #   os.remove(video_path)
-        #   self._logger.info(f"Deleted local file after upload: {video_path}")
-        # except Exception as e:
-        #   self._logger.warning(f"Failed to delete local file: {e}")
+          # Optionally delete local file after successful upload
+          # Uncomment if you want to auto-delete:
+          # try:
+          #   os.remove(video_path)
+          #   self._logger.info(f"Deleted local file after upload: {video_path}")
+          # except Exception as e:
+          #   self._logger.warning(f"Failed to delete local file: {e}")
 
-      except HttpError as e:
-        self._logger.error(f"YouTube API error during upload: {e}")
-        self.send_notification(f"YouTube upload failed for {stream_name}: {e.error_details}", "error")
-      except ImportError as e:
-        self._logger.error(f"YouTube API libraries not available: {e}")
-        self.send_notification(f"YouTube upload failed: Missing libraries", "error")
-      except Exception as e:
-        self._logger.error(f"Failed to upload to YouTube: {e}")
-        self.send_notification(f"YouTube upload failed for {stream_name}: {str(e)}", "error")
+        except HttpError as e:
+          self._logger.error(f"YouTube API error during upload: {e}")
+          self.send_notification(f"YouTube upload failed for {stream_name}: {e.error_details}", "error")
+        except ImportError as e:
+          self._logger.error(f"YouTube API libraries not available: {e}")
+          self.send_notification(f"YouTube upload failed: Missing libraries", "error")
+        except Exception as e:
+          self._logger.error(f"Failed to upload to YouTube: {e}")
+          self.send_notification(f"YouTube upload failed for {stream_name}: {str(e)}", "error")
 
     # Run upload in background thread
     upload_thread = threading.Thread(target=_upload, name=f"YouTubeUpload-{stream_name}")
@@ -982,8 +991,6 @@ class OctoStreamControlPlugin(
         try:
           if process.poll() is None:
             # Process is still running, send SIGTERM for graceful shutdown
-            import signal
-            import os
             try:
               # Send SIGTERM first (allows FFmpeg to finalize the file)
               process.terminate()
